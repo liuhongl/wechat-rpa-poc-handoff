@@ -125,6 +125,11 @@ def main() -> None:
     parser.add_argument("--app-name", default=os.getenv("WECOM_DESKTOP_APP_NAME", "企业微信"))
     parser.add_argument("--human-userid", default=os.getenv("HUMAN_USERID", ""))
     parser.add_argument("--ignore-state", action="store_true")
+    parser.add_argument(
+        "--mark-planned",
+        action="store_true",
+        help="Mark planned records as processed without desktop automation, for manually confirmed sends.",
+    )
     parser.add_argument("--mark-processed", action="store_true")
     parser.add_argument("--run", action="store_true", help="Compose replies into WeCom desktop. Does not send unless --send is also set.")
     parser.add_argument("--send", action="store_true", help="Send composed replies. Implies --run and marks processed on success.")
@@ -189,6 +194,10 @@ def main() -> None:
         if args.mark_processed:
             processed.update(record_key(action.record) for action in actions)
             save_processed_keys(args.state_file, processed)
+    elif args.mark_planned:
+        state_keys = load_processed_keys(args.state_file) if args.ignore_state else processed
+        state_keys.update(record_key(action.record) for action in actions)
+        save_processed_keys(args.state_file, state_keys)
 
 
 if __name__ == "__main__":

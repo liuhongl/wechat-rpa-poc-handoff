@@ -1,5 +1,8 @@
 import subprocess
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 import scripts.wecom_live_auto_reply_poc as live_auto_reply
@@ -19,6 +22,45 @@ class WecomLiveAutoReplyPocTests(unittest.TestCase):
                     live_auto_reply._run_osascript("bad script")
 
         self.assertIn("不允许辅助访问", str(raised.exception))
+
+    def test_mark_planned_records_manual_send_state_without_desktop_run(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "wecom_live_auto_reply_poc.py"
+        fixture = root / "tests" / "fixtures" / "wecom_ui_live_mentions.txt"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_file = Path(tmpdir) / "processed.json"
+            out_file = Path(tmpdir) / "actions.jsonl"
+            base_command = [
+                sys.executable,
+                str(script),
+                "--ui-text-file",
+                str(fixture),
+                "--chat-name",
+                "汽车贷款小助手",
+                "--assistant-name",
+                "刘红利",
+                "--state-file",
+                str(state_file),
+                "--out",
+                str(out_file),
+            ]
+
+            first = subprocess.run(
+                [*base_command, "--mark-planned"],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            second = subprocess.run(
+                base_command,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+        self.assertIn('"sender": "sky"', first.stdout)
+        self.assertIn("[live-ui-auto-reply] no pending reply actions", second.stdout)
 
 
 if __name__ == "__main__":

@@ -287,6 +287,16 @@ data/member_assistant_poc/processed_msgids.json
   --send
 ```
 
+如果实际发送是人工或 Computer Use 确认完成的，可以只把这批计划动作标记为已处理，避免下一轮重复回复：
+
+```bash
+.venv/bin/python scripts/wecom_live_auto_reply_poc.py \
+  --ui-text-file tests/fixtures/wecom_ui_live_mentions.txt \
+  --chat-name "汽车贷款小助手" \
+  --assistant-name "刘红利" \
+  --mark-planned
+```
+
 注意：这只是无 SDK 的客户端 RPA POC。它依赖 macOS 辅助功能权限和企业微信 UI 结构，只能读取当前 UI 暴露出的会话列表预览，不等价于完整消息流。生产方案仍建议最终接会话内容存档 SDK。
 
 ## 验证 2：客户端能否定位群并发送文本
