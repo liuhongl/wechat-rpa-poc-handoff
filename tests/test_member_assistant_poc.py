@@ -5,6 +5,7 @@ from app.member_assistant_poc import (
     build_at_member_applescript,
     build_send_text_applescript,
     extract_plain_text_records,
+    plan_reply_actions,
 )
 
 
@@ -68,6 +69,105 @@ class MemberAssistantPocTests(unittest.TestCase):
         self.assertIn("key code 36 -- select mention candidate", script)
         self.assertIn('set shouldSend to true', script)
         self.assertIn("key code 36 -- send", script)
+
+    def test_plan_reply_actions_only_replies_to_assistant_mentions(self) -> None:
+        records = extract_plain_text_records(
+            [
+                {
+                    "seq": 21,
+                    "msgid": "msg-21_external",
+                    "action": "send",
+                    "from": "wm_customer",
+                    "roomid": "target-room",
+                    "msgtime": 1710000000000,
+                    "msgtype": "text",
+                    "text": {"content": "@小助理 贷款利率是多少"},
+                },
+                {
+                    "seq": 22,
+                    "msgid": "msg-22_external",
+                    "action": "send",
+                    "from": "wm_customer",
+                    "roomid": "target-room",
+                    "msgtime": 1710000001000,
+                    "msgtype": "text",
+                    "text": {"content": "账单什么时候到期？"},
+                },
+            ],
+            target_roomid="target-room",
+        )
+
+        actions = plan_reply_actions(
+            records,
+            assistant_names=["小助理"],
+            chat_name="外部客户群",
+            app_name="企业微信",
+            require_mention=True,
+        )
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].record.msgid, "msg-21_external")
+        self.assertIn("利率", actions[0].reply_content)
+        self.assertIn("set targetChat to \"外部客户群\"", actions[0].applescript)
+        self.assertNotIn("key code 36 -- send", actions[0].applescript)
+
+    def test_plan_reply_actions_answers_business_certificate_question(self) -> None:
+        records = extract_plain_text_records(
+            [
+                {
+                    "seq": 23,
+                    "msgid": "msg-23_external",
+                    "action": "send",
+                    "from": "wm_customer",
+                    "roomid": "target-room",
+                    "msgtime": 1710000000000,
+                    "msgtype": "text",
+                    "text": {"content": "@小助理 需要经营证明吗"},
+                }
+            ],
+            target_roomid="target-room",
+        )
+
+        actions = plan_reply_actions(
+            records,
+            assistant_names=["小助理"],
+            chat_name="外部客户群",
+            app_name="企业微信",
+            require_mention=True,
+        )
+
+        self.assertEqual(len(actions), 1)
+        self.assertFalse(actions[0].handoff)
+        self.assertIn("经营证明", actions[0].reply_content)
+
+    def test_plan_reply_actions_can_include_non_mentions_when_allowed(self) -> None:
+        records = extract_plain_text_records(
+            [
+                {
+                    "seq": 31,
+                    "msgid": "msg-31_external",
+                    "action": "send",
+                    "from": "wm_customer",
+                    "roomid": "target-room",
+                    "msgtime": 1710000000000,
+                    "msgtype": "text",
+                    "text": {"content": "还款日是哪天"},
+                }
+            ],
+            target_roomid="target-room",
+        )
+
+        actions = plan_reply_actions(
+            records,
+            assistant_names=["小助理"],
+            chat_name="外部客户群",
+            app_name="企业微信",
+            require_mention=False,
+        )
+
+        self.assertEqual(len(actions), 1)
+        self.assertFalse(actions[0].handoff)
+        self.assertIn("还款日", actions[0].reply_content)
 
 
 if __name__ == "__main__":

@@ -97,6 +97,50 @@ data/member_assistant_poc/msgaudit_records.jsonl
 
 `data/` 已被 `.gitignore` 忽略。
 
+## 模拟自动回复动作计划
+
+在接真实 SDK 前，可以先从模拟会话存档生成“将要回复什么”的动作计划：
+
+```bash
+.venv/bin/python scripts/member_assistant_reply_planner_poc.py \
+  --sample-plaintext-json tests/fixtures/msgaudit_plaintext_messages.json \
+  --target-roomid wr_sample_target_room \
+  --chat-name "模拟外部客户群"
+```
+
+默认只处理明确 `@小助理` 的消息，避免普通群聊内容被误回复。输出会写入：
+
+```text
+data/member_assistant_poc/reply_actions.jsonl
+```
+
+如果要验证“非 @ 消息也可进入回复计划”，可以加：
+
+```bash
+.venv/bin/python scripts/member_assistant_reply_planner_poc.py \
+  --sample-plaintext-json tests/fixtures/msgaudit_plaintext_messages.json \
+  --target-roomid wr_sample_target_room \
+  --chat-name "模拟外部客户群" \
+  --include-non-mentions
+```
+
+如果要同时输出即将交给桌面自动化的 AppleScript：
+
+```bash
+.venv/bin/python scripts/member_assistant_reply_planner_poc.py \
+  --include-applescript
+```
+
+成功标准：
+
+```text
+[ ] 目标群文本消息被转换为回复动作
+[ ] 默认只响应 @小助理 的消息
+[ ] FAQ 命中时输出业务回复
+[ ] 未命中 FAQ 时输出转人工草案
+[ ] 生成的 AppleScript 默认不包含真正发送动作
+```
+
 ## 验证 2：客户端能否定位群并发送文本
 
 只打印 AppleScript，不操作客户端：

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable
 
+from app.bot_logic import BotReply, answer
+
 
 @dataclass(frozen=True)
 class PlainTextRecord:
@@ -24,6 +26,16 @@ class DesktopSendPlan:
     search_delay: float = 0.6
     compose_delay: float = 0.5
     mention_delay: float = 0.8
+
+
+@dataclass(frozen=True)
+class ReplyAction:
+    record: PlainTextRecord
+    reply_content: str
+    matched_question: str | None
+    score: float
+    handoff: bool
+    applescript: str
 
 
 def applescript_quote(value: str) -> str:
@@ -63,6 +75,46 @@ def extract_plain_text_records(
     return records
 
 
+def plan_reply_actions(
+    records: Iterable[PlainTextRecord],
+    *,
+    assistant_names: Iterable[str],
+    chat_name: str,
+    app_name: str = "企业微信",
+    require_mention: bool = True,
+    send: bool = False,
+    human_userid: str = "",
+) -> list[ReplyAction]:
+    names = [name.strip() for name in assistant_names if name.strip()]
+    actions: list[ReplyAction] = []
+
+    for record in records:
+        if require_mention and not _mentions_assistant(record.content, names):
+            continue
+
+        reply = _reply_for_record(record, human_userid=human_userid)
+        script = build_send_text_applescript(
+            DesktopSendPlan(
+                app_name=app_name,
+                chat_name=chat_name,
+                message=reply.content,
+                send=send,
+            )
+        )
+        actions.append(
+            ReplyAction(
+                record=record,
+                reply_content=reply.content,
+                matched_question=reply.matched_question,
+                score=reply.score,
+                handoff=reply.handoff,
+                applescript=script,
+            )
+        )
+
+    return actions
+
+
 def build_send_text_applescript(plan: DesktopSendPlan) -> str:
     lines = _base_focus_chat_lines(plan)
     lines.extend(
@@ -76,6 +128,23 @@ def build_send_text_applescript(plan: DesktopSendPlan) -> str:
         lines.append("  key code 36 -- send")
     lines.extend(["end tell", "return \"ok\""])
     return "\n".join(lines) + "\n"
+
+
+def reply_action_to_dict(action: ReplyAction, *, include_applescript: bool = False) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "seq": action.record.seq,
+        "msgid": action.record.msgid,
+        "sender": action.record.sender,
+        "roomid": action.record.roomid,
+        "content": action.record.content,
+        "reply_content": action.reply_content,
+        "matched_question": action.matched_question,
+        "score": round(action.score, 4),
+        "handoff": action.handoff,
+    }
+    if include_applescript:
+        payload["applescript"] = action.applescript
+    return payload
 
 
 def build_at_member_applescript(
@@ -142,3 +211,20 @@ def _optional_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _mentions_assistant(content: str, assistant_names: list[str]) -> bool:
+    if not assistant_names:
+        return True
+    normalized = content.replace(" ", "")
+    return any(f"@{name}" in normalized for name in assistant_names)
+
+
+def _reply_for_record(record: PlainTextRecord, *, human_userid: str = "") -> BotReply:
+    callback = {
+        "msgtype": "text",
+        "chatid": record.roomid,
+        "from": {"userid": record.sender},
+        "text": {"content": record.content},
+    }
+    return answer(callback, human_userid=human_userid)
