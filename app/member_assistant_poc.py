@@ -40,8 +40,56 @@ class ReplyAction:
     applescript: str
 
 
+@dataclass(frozen=True)
+class DesktopPreflightReport:
+    ok: bool
+    platform: str
+    app_name: str
+    chat_name: str
+    will_run: bool
+    will_send: bool
+    missing: list[str]
+    warnings: list[str]
+
+
 def applescript_quote(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def build_desktop_preflight_report(
+    *,
+    app_name: str,
+    chat_name: str,
+    platform: str,
+    run: bool,
+    send: bool,
+) -> DesktopPreflightReport:
+    missing: list[str] = []
+    warnings: list[str] = []
+
+    if not app_name.strip():
+        missing.append("app_name")
+    if not chat_name.strip():
+        missing.append("chat_name")
+    if platform != "darwin":
+        missing.append("macos")
+        warnings.append("desktop automation currently supports macOS only")
+
+    will_run = run or send
+    will_send = send
+    if will_send and not will_run:
+        warnings.append("--send implies --run")
+
+    return DesktopPreflightReport(
+        ok=not missing,
+        platform=platform,
+        app_name=app_name,
+        chat_name=chat_name,
+        will_run=will_run,
+        will_send=will_send,
+        missing=missing,
+        warnings=warnings,
+    )
 
 
 def extract_plain_text_records(

@@ -3,6 +3,7 @@ import unittest
 from app.member_assistant_poc import (
     DesktopSendPlan,
     PlainTextRecord,
+    build_desktop_preflight_report,
     build_at_member_applescript,
     build_send_text_applescript,
     extract_plain_text_records,
@@ -197,6 +198,35 @@ class MemberAssistantPocTests(unittest.TestCase):
         processed = {record_key(records[0]), "target-room:42"}
 
         self.assertEqual(filter_unprocessed_records(records, processed), [])
+
+    def test_build_desktop_preflight_report_marks_missing_chat_name(self) -> None:
+        report = build_desktop_preflight_report(
+            app_name="企业微信",
+            chat_name="",
+            platform="darwin",
+            send=False,
+            run=False,
+        )
+
+        self.assertFalse(report.ok)
+        self.assertIn("chat_name", report.missing)
+        self.assertFalse(report.will_run)
+        self.assertFalse(report.will_send)
+
+    def test_build_desktop_preflight_report_accepts_darwin_config(self) -> None:
+        report = build_desktop_preflight_report(
+            app_name="企业微信",
+            chat_name="外部客户群",
+            platform="darwin",
+            send=True,
+            run=False,
+        )
+
+        self.assertTrue(report.ok)
+        self.assertEqual(report.app_name, "企业微信")
+        self.assertEqual(report.chat_name, "外部客户群")
+        self.assertTrue(report.will_run)
+        self.assertTrue(report.will_send)
 
 
 if __name__ == "__main__":

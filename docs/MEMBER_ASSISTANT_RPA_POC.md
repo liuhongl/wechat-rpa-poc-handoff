@@ -53,6 +53,25 @@ WECOM_DESKTOP_TARGET_CHAT_NAME=目标外部客户群名称
 WECOM_DESKTOP_AT_MEMBER_NAME=微信客户在群里的昵称
 ```
 
+运行前可以先做一次无副作用体检：
+
+```bash
+.venv/bin/python scripts/wecom_desktop_preflight_poc.py \
+  --chat-name "目标外部客户群名称"
+```
+
+这个命令只输出 JSON 报告，不打开企业微信、不搜索群、不输入文字、不发送消息。重点看：
+
+```text
+ok: 是否满足基本配置
+osascript_available: AppleScript 是否可用
+app_exists: Spotlight 是否能找到企业微信应用
+missing: 缺失项
+warnings: 风险提示
+```
+
+如果 `app_exists` 是 `false`，先确认本机是否安装企业微信，以及应用名称是否为 `企业微信` 或 `WeCom`。
+
 ## 验证 1：会话内容存档能否读到群消息
 
 先用样例明文 JSON 验证解析逻辑：
