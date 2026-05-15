@@ -37,13 +37,17 @@ def _write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
 def _run_osascript(script: str) -> str:
     if sys.platform != "darwin":
         raise SystemExit("live desktop auto-reply POC currently supports macOS only")
-    result = subprocess.run(
-        ["osascript"],
-        input=script,
-        text=True,
-        check=True,
-        capture_output=True,
-    )
+    try:
+        result = subprocess.run(
+            ["osascript"],
+            input=script,
+            text=True,
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        details = (exc.stderr or exc.stdout or str(exc)).strip()
+        raise SystemExit(f"osascript failed: {details}") from exc
     return result.stdout
 
 
