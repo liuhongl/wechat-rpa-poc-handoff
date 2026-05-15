@@ -56,6 +56,20 @@ def applescript_quote(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def resolve_desktop_chat_name(
+    chat_name: str,
+    *,
+    run: bool,
+    fallback: str = "模拟外部客户群",
+) -> str:
+    normalized = chat_name.strip()
+    if normalized:
+        return normalized
+    if run:
+        raise ValueError("missing --chat-name or WECOM_DESKTOP_TARGET_CHAT_NAME")
+    return fallback
+
+
 def build_desktop_preflight_report(
     *,
     app_name: str,

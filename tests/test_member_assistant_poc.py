@@ -10,6 +10,7 @@ from app.member_assistant_poc import (
     filter_unprocessed_records,
     plan_reply_actions,
     record_key,
+    resolve_desktop_chat_name,
 )
 
 
@@ -227,6 +228,16 @@ class MemberAssistantPocTests(unittest.TestCase):
         self.assertEqual(report.chat_name, "外部客户群")
         self.assertTrue(report.will_run)
         self.assertTrue(report.will_send)
+
+    def test_resolve_desktop_chat_name_requires_real_name_when_running(self) -> None:
+        with self.assertRaisesRegex(ValueError, "missing --chat-name"):
+            resolve_desktop_chat_name("", run=True)
+
+    def test_resolve_desktop_chat_name_keeps_simulation_fallback_for_plan_only(self) -> None:
+        self.assertEqual(
+            resolve_desktop_chat_name("", run=False),
+            "模拟外部客户群",
+        )
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ from app.member_assistant_poc import (
     plan_reply_actions,
     record_key,
     reply_action_to_dict,
+    resolve_desktop_chat_name,
     save_processed_keys,
 )
 
@@ -60,7 +61,7 @@ def main() -> None:
     )
     parser.add_argument("--target-roomid", default=os.getenv("WECOM_MSGAUDIT_TARGET_ROOMID", "wr_sample_target_room"))
     parser.add_argument("--assistant-name", action="append", default=["小助理"])
-    parser.add_argument("--chat-name", default=os.getenv("WECOM_DESKTOP_TARGET_CHAT_NAME", "模拟外部客户群"))
+    parser.add_argument("--chat-name", default=os.getenv("WECOM_DESKTOP_TARGET_CHAT_NAME", ""))
     parser.add_argument("--app-name", default=os.getenv("WECOM_DESKTOP_APP_NAME", "企业微信"))
     parser.add_argument("--human-userid", default=os.getenv("HUMAN_USERID", ""))
     parser.add_argument("--include-non-mentions", action="store_true")
@@ -89,6 +90,10 @@ def main() -> None:
         raise SystemExit("--mark-processed requires --run or --send")
     if args.max_actions < 1:
         raise SystemExit("--max-actions must be >= 1")
+    try:
+        args.chat_name = resolve_desktop_chat_name(args.chat_name, run=args.run)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     messages = _load_messages(args.sample_plaintext_json)
     records = extract_plain_text_records(messages, target_roomid=args.target_roomid or None)
