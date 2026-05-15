@@ -17,6 +17,7 @@ from app.member_assistant_poc import (
     extract_plain_text_records,
     plan_reply_actions,
     reply_action_to_dict,
+    resolve_assistant_names,
 )
 
 
@@ -49,7 +50,7 @@ def main() -> None:
         help="Already-decrypted message audit plaintext JSON.",
     )
     parser.add_argument("--target-roomid", default=os.getenv("WECOM_MSGAUDIT_TARGET_ROOMID", "wr_sample_target_room"))
-    parser.add_argument("--assistant-name", action="append", default=["小助理"], help="Assistant name that must be @ mentioned. Can be repeated.")
+    parser.add_argument("--assistant-name", action="append", default=[], help="Assistant name that must be @ mentioned. Can be repeated.")
     parser.add_argument(
         "--assistant-sender-id",
         action="append",
@@ -64,6 +65,10 @@ def main() -> None:
     parser.add_argument("--include-applescript", action="store_true", help="Include generated AppleScript in JSON output.")
     parser.add_argument("--out", type=Path, default=ROOT_DIR / "data" / "member_assistant_poc" / "reply_actions.jsonl")
     args = parser.parse_args()
+    assistant_names = resolve_assistant_names(
+        args.assistant_name,
+        env_value=os.getenv("WECOM_ASSISTANT_NAME", ""),
+    )
 
     messages = _load_messages(args.sample_plaintext_json)
     records = extract_plain_text_records(
@@ -72,7 +77,7 @@ def main() -> None:
     )
     actions = plan_reply_actions(
         records,
-        assistant_names=args.assistant_name,
+        assistant_names=assistant_names,
         chat_name=args.chat_name,
         app_name=args.app_name,
         require_mention=not args.include_non_mentions,

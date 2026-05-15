@@ -67,6 +67,7 @@ WECOM_MSGAUDIT_TARGET_ROOMID=
 WECOM_DESKTOP_APP_NAME=企业微信
 WECOM_DESKTOP_TARGET_CHAT_NAME=目标外部客户群名称
 WECOM_DESKTOP_AT_MEMBER_NAME=微信客户在群里的昵称
+WECOM_ASSISTANT_NAME=小助理成员在群里被 @ 的名称，例如刘红利
 ```
 
 运行前可以先做一次无副作用体检：
@@ -143,7 +144,7 @@ data/member_assistant_poc/msgaudit_records.jsonl
   --chat-name "模拟外部客户群"
 ```
 
-默认只处理明确 `@小助理` 的消息，避免普通群聊内容被误回复。输出会写入：
+回复规划脚本优先使用 `--assistant-name`，其次使用 `.env` 里的 `WECOM_ASSISTANT_NAME`，都没有时才回退到 `小助理`。默认只处理明确 @ 小助理名称的消息，避免普通群聊内容被误回复。如果当前小助理就是企业微信成员本人，例如 `刘红利`，需要配置 `WECOM_ASSISTANT_NAME=刘红利`，或者命令行显式加 `--assistant-name "刘红利"`。输出会写入：
 
 ```text
 data/member_assistant_poc/reply_actions.jsonl
@@ -238,6 +239,55 @@ data/member_assistant_poc/processed_msgids.json
 [ ] --run 只输入不发送
 [ ] --send 才真正发送并标记已处理
 ```
+
+## 无 SDK 客户端自动回复 POC
+
+这条链路不接会话内容存档 SDK，而是从企业微信桌面端 UI 里读取会话列表的 `[有人@我]` 提示，提取类似下面的行：
+
+```text
+汽车贷款小助手 [有人@我] sky: 需要经营证明吗 @刘红利
+```
+
+先用固定 UI 文本 dry-run 验证，不读取企业微信、不发送：
+
+```bash
+.venv/bin/python scripts/wecom_live_auto_reply_poc.py \
+  --ui-text-file tests/fixtures/wecom_ui_live_mentions.txt \
+  --chat-name "汽车贷款小助手" \
+  --assistant-name "刘红利" \
+  --ignore-state \
+  --out /tmp/live_ui_reply_actions.jsonl
+```
+
+成功时会输出一条回复动作，`sender` 为 `sky`，`question_content` 为 `需要经营证明吗`。
+
+读取真实企业微信 UI 但不输入、不发送：
+
+```bash
+.venv/bin/python scripts/wecom_live_auto_reply_poc.py \
+  --chat-name "汽车贷款小助手" \
+  --assistant-name "刘红利"
+```
+
+运行并把回复写入目标群输入框，但不发送：
+
+```bash
+.venv/bin/python scripts/wecom_live_auto_reply_poc.py \
+  --chat-name "汽车贷款小助手" \
+  --assistant-name "刘红利" \
+  --run
+```
+
+真正发送必须显式加 `--send`：
+
+```bash
+.venv/bin/python scripts/wecom_live_auto_reply_poc.py \
+  --chat-name "汽车贷款小助手" \
+  --assistant-name "刘红利" \
+  --send
+```
+
+注意：这只是无 SDK 的客户端 RPA POC。它依赖 macOS 辅助功能权限和企业微信 UI 结构，只能读取当前 UI 暴露出的会话列表预览，不等价于完整消息流。生产方案仍建议最终接会话内容存档 SDK。
 
 ## 验证 2：客户端能否定位群并发送文本
 

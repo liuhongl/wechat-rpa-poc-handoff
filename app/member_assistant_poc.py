@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -92,6 +93,21 @@ def resolve_desktop_chat_name(
     return fallback
 
 
+def resolve_assistant_names(
+    explicit_names: Iterable[str],
+    *,
+    env_value: str,
+    fallback: str = "小助理",
+) -> list[str]:
+    names = [name.strip() for name in explicit_names if name.strip()]
+    if names:
+        return names
+    names = [name.strip() for name in env_value.split(",") if name.strip()]
+    if names:
+        return names
+    return [fallback]
+
+
 def build_desktop_preflight_report(
     *,
     app_name: str,
@@ -154,6 +170,42 @@ def extract_plain_text_records(
                 sender=str(message.get("from") or ""),
                 roomid=roomid,
                 msgtime=_optional_int(message.get("msgtime")),
+                content=content,
+            )
+        )
+
+    return records
+
+
+def extract_wecom_ui_mention_records(
+    ui_text: str,
+    *,
+    target_chat_name: str,
+    roomid: str,
+) -> list[PlainTextRecord]:
+    records: list[PlainTextRecord] = []
+    marker = "[有人@我]"
+
+    for line in ui_text.splitlines():
+        line = line.strip()
+        if not line or target_chat_name not in line or marker not in line:
+            continue
+
+        _, after_marker = line.split(marker, 1)
+        match = re.match(r"\s*(?P<sender>[^:：]+)[:：]\s*(?P<content>.+?)\s*$", after_marker)
+        if not match:
+            continue
+
+        sender = match.group("sender").strip()
+        content = match.group("content").strip()
+        records.append(
+            PlainTextRecord(
+                seq=None,
+                msgid=f"ui:{target_chat_name}:{sender}:{content}",
+                action="send",
+                sender=sender,
+                roomid=roomid,
+                msgtime=None,
                 content=content,
             )
         )

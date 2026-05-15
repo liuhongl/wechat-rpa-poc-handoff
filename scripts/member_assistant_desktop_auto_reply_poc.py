@@ -21,6 +21,7 @@ from app.member_assistant_poc import (
     plan_reply_actions,
     record_key,
     reply_action_to_dict,
+    resolve_assistant_names,
     resolve_desktop_chat_name,
     save_processed_keys,
 )
@@ -60,7 +61,7 @@ def main() -> None:
         default=ROOT_DIR / "tests" / "fixtures" / "msgaudit_plaintext_messages.json",
     )
     parser.add_argument("--target-roomid", default=os.getenv("WECOM_MSGAUDIT_TARGET_ROOMID", "wr_sample_target_room"))
-    parser.add_argument("--assistant-name", action="append", default=["小助理"])
+    parser.add_argument("--assistant-name", action="append", default=[])
     parser.add_argument("--assistant-sender-id", action="append", default=[os.getenv("WECOM_ASSISTANT_SENDER_ID", "")])
     parser.add_argument("--chat-name", default=os.getenv("WECOM_DESKTOP_TARGET_CHAT_NAME", ""))
     parser.add_argument("--app-name", default=os.getenv("WECOM_DESKTOP_APP_NAME", "企业微信"))
@@ -84,6 +85,10 @@ def main() -> None:
         default=ROOT_DIR / "data" / "member_assistant_poc" / "desktop_auto_reply_actions.jsonl",
     )
     args = parser.parse_args()
+    assistant_names = resolve_assistant_names(
+        args.assistant_name,
+        env_value=os.getenv("WECOM_ASSISTANT_NAME", ""),
+    )
 
     if args.send:
         args.run = True
@@ -103,7 +108,7 @@ def main() -> None:
     pending_records = filter_unprocessed_records(records, processed)
     actions = plan_reply_actions(
         pending_records,
-        assistant_names=args.assistant_name,
+        assistant_names=assistant_names,
         chat_name=args.chat_name,
         app_name=args.app_name,
         require_mention=not args.include_non_mentions,

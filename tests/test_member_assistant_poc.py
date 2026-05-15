@@ -8,11 +8,13 @@ from app.member_assistant_poc import (
     build_desktop_preflight_report,
     build_at_member_applescript,
     build_send_text_applescript,
+    extract_wecom_ui_mention_records,
     extract_plain_text_records,
     filter_unprocessed_records,
     plan_bill_reminder_actions,
     plan_reply_actions,
     record_key,
+    resolve_assistant_names,
     resolve_desktop_chat_name,
 )
 
@@ -48,6 +50,37 @@ class MemberAssistantPocTests(unittest.TestCase):
         self.assertEqual(records[0].seq, 11)
         self.assertEqual(records[0].roomid, "target-room")
         self.assertEqual(records[0].content, "@小助理 需要经营证明吗")
+
+    def test_extract_wecom_ui_mention_records_from_conversation_list(self) -> None:
+        ui_text = """
+25 text 汽车贷款小助手 [有人@我] sky: 需要经营证明吗\u2005@刘红利
+26 文本 1分钟前
+32 text 测试 kෆy: 1
+"""
+
+        records = extract_wecom_ui_mention_records(
+            ui_text,
+            target_chat_name="汽车贷款小助手",
+            roomid="汽车贷款小助手",
+        )
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0].sender, "sky")
+        self.assertEqual(records[0].content, "需要经营证明吗\u2005@刘红利")
+        self.assertEqual(records[0].msgid, "ui:汽车贷款小助手:sky:需要经营证明吗\u2005@刘红利")
+
+    def test_extract_wecom_ui_mention_records_ignores_other_chats(self) -> None:
+        ui_text = """
+25 text 其他群 [有人@我] sky: 需要经营证明吗\u2005@刘红利
+"""
+
+        records = extract_wecom_ui_mention_records(
+            ui_text,
+            target_chat_name="汽车贷款小助手",
+            roomid="汽车贷款小助手",
+        )
+
+        self.assertEqual(records, [])
 
     def test_build_send_text_applescript_defaults_to_dry_run(self) -> None:
         script = build_send_text_applescript(
@@ -147,6 +180,35 @@ class MemberAssistantPocTests(unittest.TestCase):
         self.assertEqual(len(actions), 1)
         self.assertFalse(actions[0].handoff)
         self.assertIn("经营证明", actions[0].reply_content)
+
+    def test_plan_reply_actions_supports_member_name_as_assistant_name(self) -> None:
+        records = [
+            PlainTextRecord(
+                seq=24,
+                msgid="live-sky-mention",
+                action="send",
+                sender="sky",
+                roomid="target-room",
+                msgtime=1710000000000,
+                content="需要经营证明吗\u2005@刘红利",
+            )
+        ]
+
+        default_actions = plan_reply_actions(
+            records,
+            assistant_names=["小助理"],
+            chat_name="外部客户群",
+        )
+        member_name_actions = plan_reply_actions(
+            records,
+            assistant_names=["刘红利"],
+            chat_name="外部客户群",
+        )
+
+        self.assertEqual(default_actions, [])
+        self.assertEqual(len(member_name_actions), 1)
+        self.assertEqual(member_name_actions[0].question_content, "需要经营证明吗")
+        self.assertIn("经营证明", member_name_actions[0].reply_content)
 
     def test_plan_reply_actions_can_include_non_mentions_when_allowed(self) -> None:
         records = extract_plain_text_records(
@@ -348,6 +410,11 @@ class MemberAssistantPocTests(unittest.TestCase):
             resolve_desktop_chat_name("", run=False),
             "模拟外部客户群",
         )
+
+    def test_resolve_assistant_names_prefers_explicit_then_env_then_fallback(self) -> None:
+        self.assertEqual(resolve_assistant_names(["刘红利"], env_value="小助理"), ["刘红利"])
+        self.assertEqual(resolve_assistant_names([], env_value="刘红利,小助理"), ["刘红利", "小助理"])
+        self.assertEqual(resolve_assistant_names([], env_value=""), ["小助理"])
 
     def test_plan_bill_reminder_actions_reminds_three_days_before_once(self) -> None:
         reminders = [
