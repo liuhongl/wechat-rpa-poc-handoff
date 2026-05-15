@@ -299,6 +299,17 @@ data/member_assistant_poc/processed_msgids.json
 
 注意：这只是无 SDK 的客户端 RPA POC。它依赖 macOS 辅助功能权限和企业微信 UI 结构，只能读取当前 UI 暴露出的会话列表预览，不等价于完整消息流。生产方案仍建议最终接会话内容存档 SDK。
 
+截至 2026-05-15 的本机实测结果：
+
+```text
+[x] Computer Use 能读取企业微信真实 UI，并识别 [有人@我] 会话预览
+[x] Computer Use 能把回复写入输入框并发送
+[x] osascript 加入 macOS 辅助功能后，不再报权限错误
+[!] 企业微信窗口对 AppleScript 暴露的 accessible contents 为空，脚本无法直接读取聊天列表文本
+```
+
+因此，无 SDK 自动回复目前可验证到“Computer Use 驱动的半自动闭环”；如果要做稳定无人值守，仍需要接会话内容存档 SDK 或换成能稳定读取企业微信客户端 UI 的自动化层。
+
 ## 验证 2：客户端能否定位群并发送文本
 
 只打印 AppleScript，不操作客户端：

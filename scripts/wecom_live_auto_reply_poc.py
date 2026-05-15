@@ -69,7 +69,13 @@ tell application "System Events"
   end tell
 end tell
 """
-    return _run_osascript(script)
+    ui_text = _run_osascript(script)
+    if not ui_text.strip():
+        raise SystemExit(
+            "no accessible UI text from WeCom desktop; AppleScript can access the window "
+            "but this WeCom view did not expose chat contents"
+        )
+    return ui_text
 
 
 def _compose_with_clipboard(
