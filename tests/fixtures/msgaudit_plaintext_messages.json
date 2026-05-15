@@ -1,0 +1,55 @@
+[
+  {
+    "seq": 1001,
+    "msgid": "sample-target-001_external",
+    "action": "send",
+    "from": "wm_sample_customer_001",
+    "tolist": ["LiuHongLi"],
+    "roomid": "wr_sample_target_room",
+    "msgtime": 1710000000000,
+    "msgtype": "text",
+    "text": {
+      "content": "@小助理 需要经营证明吗"
+    }
+  },
+  {
+    "seq": 1002,
+    "msgid": "sample-other-room-001_external",
+    "action": "send",
+    "from": "wm_sample_customer_002",
+    "tolist": ["LiuHongLi"],
+    "roomid": "wr_sample_other_room",
+    "msgtime": 1710000001000,
+    "msgtype": "text",
+    "text": {
+      "content": "@小助理 这个消息不应该被目标群读取"
+    }
+  },
+  {
+    "seq": 1003,
+    "msgid": "sample-target-image-001_external",
+    "action": "send",
+    "from": "wm_sample_customer_001",
+    "tolist": ["LiuHongLi"],
+    "roomid": "wr_sample_target_room",
+    "msgtime": 1710000002000,
+    "msgtype": "image",
+    "image": {
+      "md5sum": "sample",
+      "filesize": 1024
+    }
+  },
+  {
+    "seq": 1004,
+    "msgid": "sample-target-002_external",
+    "action": "send",
+    "from": "wm_sample_customer_003",
+    "tolist": ["LiuHongLi"],
+    "roomid": "wr_sample_target_room",
+    "msgtime": 1710000003000,
+    "msgtype": "text",
+    "text": {
+      "content": "账单什么时候到期？"
+    }
+  }
+]

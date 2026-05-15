@@ -59,8 +59,16 @@ WECOM_DESKTOP_AT_MEMBER_NAME=微信客户在群里的昵称
 
 ```bash
 .venv/bin/python scripts/msgaudit_reader_poc.py \
-  --sample-plaintext-json /absolute/path/to/sample_messages.json \
-  --target-roomid wrxxxx
+  --sample-plaintext-json tests/fixtures/msgaudit_plaintext_messages.json \
+  --target-roomid wr_sample_target_room
+```
+
+这一步不需要开通会话内容存档，模拟的是 SDK 解密后的明文消息结构。它可以先验证：
+
+```text
+[ ] 只读取目标 roomid 的消息
+[ ] 只输出文本消息
+[ ] 其他群和图片消息会被忽略
 ```
 
 真实 SDK 拉取：
