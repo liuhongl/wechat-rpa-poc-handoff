@@ -357,6 +357,8 @@ WECOM_ASSISTANT_SENDER_ID=小助理成员的发送者ID
 
 主动提醒先用模拟账单数据验证，不操作企业微信：
 
+当前样例账单把 `bill-sky-001` 设为 2026-05-17 到期；以 2026-05-15 运行时，会生成“账单还有2天到期”的提醒。
+
 ```bash
 .venv/bin/python scripts/bill_reminder_planner_poc.py \
   --sample-bills-json tests/fixtures/bill_reminders.json \

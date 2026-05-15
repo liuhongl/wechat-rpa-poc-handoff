@@ -4,7 +4,7 @@
     "roomid": "wr_sample_target_room",
     "chat_name": "模拟外部客户群",
     "member_name": "sky",
-    "due_date": "2026-05-18",
+    "due_date": "2026-05-17",
     "status": "active"
   },
   {
@@ -20,7 +20,7 @@
     "roomid": "wr_sample_target_room",
     "chat_name": "模拟外部客户群",
     "member_name": "sky",
-    "due_date": "2026-05-18",
+    "due_date": "2026-05-17",
     "status": "settled"
   }
 ]
