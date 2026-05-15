@@ -61,10 +61,12 @@ def main() -> None:
     )
     parser.add_argument("--target-roomid", default=os.getenv("WECOM_MSGAUDIT_TARGET_ROOMID", "wr_sample_target_room"))
     parser.add_argument("--assistant-name", action="append", default=["小助理"])
+    parser.add_argument("--assistant-sender-id", action="append", default=[os.getenv("WECOM_ASSISTANT_SENDER_ID", "")])
     parser.add_argument("--chat-name", default=os.getenv("WECOM_DESKTOP_TARGET_CHAT_NAME", ""))
     parser.add_argument("--app-name", default=os.getenv("WECOM_DESKTOP_APP_NAME", "企业微信"))
     parser.add_argument("--human-userid", default=os.getenv("HUMAN_USERID", ""))
     parser.add_argument("--include-non-mentions", action="store_true")
+    parser.add_argument("--recent-context-limit", type=int, default=3)
     parser.add_argument("--ignore-state", action="store_true", help="Do not skip records from the processed state file.")
     parser.add_argument("--mark-processed", action="store_true", help="Mark planned records as processed after a successful run.")
     parser.add_argument("--run", action="store_true", help="Run generated AppleScript to compose replies.")
@@ -107,6 +109,8 @@ def main() -> None:
         require_mention=not args.include_non_mentions,
         send=args.send,
         human_userid=args.human_userid,
+        assistant_sender_ids=args.assistant_sender_id,
+        recent_context_limit=args.recent_context_limit,
     )[: args.max_actions]
 
     rows = [

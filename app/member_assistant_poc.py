@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -37,6 +38,27 @@ class ReplyAction:
     matched_question: str | None
     score: float
     handoff: bool
+    applescript: str
+    question_content: str | None = None
+
+
+@dataclass(frozen=True)
+class BillReminder:
+    bill_id: str
+    roomid: str
+    chat_name: str
+    member_name: str
+    due_date: date
+    status: str = "active"
+
+
+@dataclass(frozen=True)
+class BillReminderAction:
+    reminder: BillReminder
+    remind_date: date
+    days_before: int
+    state_key: str
+    message: str
     applescript: str
 
 
@@ -183,15 +205,43 @@ def plan_reply_actions(
     require_mention: bool = True,
     send: bool = False,
     human_userid: str = "",
+    assistant_sender_ids: Iterable[str] = (),
+    recent_context_limit: int = 3,
+    recent_context_window_ms: int = 10 * 60 * 1000,
 ) -> list[ReplyAction]:
     names = [name.strip() for name in assistant_names if name.strip()]
+    assistant_senders = {sender.strip() for sender in assistant_sender_ids if sender.strip()}
     actions: list[ReplyAction] = []
+    history: dict[tuple[str, str], list[PlainTextRecord]] = {}
 
     for record in records:
-        if require_mention and not _mentions_assistant(record.content, names):
+        if record.sender in assistant_senders:
             continue
 
-        reply = _reply_for_record(record, human_userid=human_userid)
+        history_key = (record.roomid, record.sender)
+        prior_records = history.get(history_key, [])
+
+        if require_mention and not _mentions_assistant(record.content, names):
+            _append_history(history, history_key, record, recent_context_limit)
+            continue
+
+        question_content = _question_content_for_record(
+            record,
+            names,
+            prior_records,
+            recent_context_limit=recent_context_limit,
+            recent_context_window_ms=recent_context_window_ms,
+        )
+        reply_record = PlainTextRecord(
+            seq=record.seq,
+            msgid=record.msgid,
+            action=record.action,
+            sender=record.sender,
+            roomid=record.roomid,
+            msgtime=record.msgtime,
+            content=question_content,
+        )
+        reply = _reply_for_record(reply_record, human_userid=human_userid)
         script = build_send_text_applescript(
             DesktopSendPlan(
                 app_name=app_name,
@@ -208,6 +258,55 @@ def plan_reply_actions(
                 score=reply.score,
                 handoff=reply.handoff,
                 applescript=script,
+                question_content=question_content,
+            )
+        )
+        _append_history(history, history_key, record, recent_context_limit)
+
+    return actions
+
+
+def plan_bill_reminder_actions(
+    reminders: Iterable[BillReminder],
+    *,
+    today: date,
+    sent_keys: Iterable[str],
+    remind_days: Iterable[int] = (3, 2, 1),
+    app_name: str = "企业微信",
+    send: bool = False,
+) -> list[BillReminderAction]:
+    already_sent = set(sent_keys)
+    valid_days = set(remind_days)
+    actions: list[BillReminderAction] = []
+
+    for reminder in reminders:
+        if reminder.status.lower() not in {"active", "unpaid", "pending"}:
+            continue
+
+        days_before = (reminder.due_date - today).days
+        if days_before not in valid_days:
+            continue
+
+        state_key = f"{reminder.bill_id}:{today.isoformat()}:d-{days_before}"
+        if state_key in already_sent:
+            continue
+
+        message = f"账单还有{days_before}天到期，请及时确认还款安排。如已处理请忽略。"
+        applescript = build_at_member_applescript(
+            app_name=app_name,
+            chat_name=reminder.chat_name,
+            member_name=reminder.member_name,
+            message=message,
+            send=send,
+        )
+        actions.append(
+            BillReminderAction(
+                reminder=reminder,
+                remind_date=today,
+                days_before=days_before,
+                state_key=state_key,
+                message=message,
+                applescript=applescript,
             )
         )
 
@@ -237,9 +336,32 @@ def reply_action_to_dict(action: ReplyAction, *, include_applescript: bool = Fal
         "roomid": action.record.roomid,
         "content": action.record.content,
         "reply_content": action.reply_content,
+        "question_content": action.question_content,
         "matched_question": action.matched_question,
         "score": round(action.score, 4),
         "handoff": action.handoff,
+    }
+    if include_applescript:
+        payload["applescript"] = action.applescript
+    return payload
+
+
+def bill_reminder_action_to_dict(
+    action: BillReminderAction,
+    *,
+    include_applescript: bool = False,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "bill_id": action.reminder.bill_id,
+        "roomid": action.reminder.roomid,
+        "chat_name": action.reminder.chat_name,
+        "member_name": action.reminder.member_name,
+        "due_date": action.reminder.due_date.isoformat(),
+        "status": action.reminder.status,
+        "remind_date": action.remind_date.isoformat(),
+        "days_before": action.days_before,
+        "state_key": action.state_key,
+        "message": action.message,
     }
     if include_applescript:
         payload["applescript"] = action.applescript
@@ -317,6 +439,49 @@ def _mentions_assistant(content: str, assistant_names: list[str]) -> bool:
         return True
     normalized = content.replace(" ", "")
     return any(f"@{name}" in normalized for name in assistant_names)
+
+
+def _strip_assistant_mentions(content: str, assistant_names: list[str]) -> str:
+    cleaned = content
+    for name in assistant_names:
+        cleaned = cleaned.replace(f"@{name}", "")
+    return " ".join(cleaned.split())
+
+
+def _append_history(
+    history: dict[tuple[str, str], list[PlainTextRecord]],
+    key: tuple[str, str],
+    record: PlainTextRecord,
+    limit: int,
+) -> None:
+    rows = history.setdefault(key, [])
+    rows.append(record)
+    if len(rows) > limit:
+        del rows[: len(rows) - limit]
+
+
+def _question_content_for_record(
+    record: PlainTextRecord,
+    assistant_names: list[str],
+    prior_records: list[PlainTextRecord],
+    *,
+    recent_context_limit: int,
+    recent_context_window_ms: int,
+) -> str:
+    current_question = _strip_assistant_mentions(record.content, assistant_names)
+    if current_question:
+        return current_question
+
+    if record.msgtime is None:
+        candidates = prior_records[-recent_context_limit:]
+    else:
+        candidates = [
+            prior
+            for prior in prior_records[-recent_context_limit:]
+            if prior.msgtime is None or 0 <= record.msgtime - prior.msgtime <= recent_context_window_ms
+        ]
+    context = [prior.content.strip() for prior in candidates if prior.content.strip()]
+    return "\n".join(context) or record.content
 
 
 def _reply_for_record(record: PlainTextRecord, *, human_userid: str = "") -> BotReply:

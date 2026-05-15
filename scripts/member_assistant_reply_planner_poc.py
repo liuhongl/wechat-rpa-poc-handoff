@@ -50,10 +50,17 @@ def main() -> None:
     )
     parser.add_argument("--target-roomid", default=os.getenv("WECOM_MSGAUDIT_TARGET_ROOMID", "wr_sample_target_room"))
     parser.add_argument("--assistant-name", action="append", default=["小助理"], help="Assistant name that must be @ mentioned. Can be repeated.")
+    parser.add_argument(
+        "--assistant-sender-id",
+        action="append",
+        default=[os.getenv("WECOM_ASSISTANT_SENDER_ID", "")],
+        help="Message-audit sender id for the assistant member. Can be repeated.",
+    )
     parser.add_argument("--chat-name", default=os.getenv("WECOM_DESKTOP_TARGET_CHAT_NAME", "模拟外部客户群"))
     parser.add_argument("--app-name", default=os.getenv("WECOM_DESKTOP_APP_NAME", "企业微信"))
     parser.add_argument("--human-userid", default=os.getenv("HUMAN_USERID", ""))
     parser.add_argument("--include-non-mentions", action="store_true", help="Plan replies for all text records, not only @assistant messages.")
+    parser.add_argument("--recent-context-limit", type=int, default=3, help="How many recent same-customer messages to use when a message only @mentions the assistant.")
     parser.add_argument("--include-applescript", action="store_true", help="Include generated AppleScript in JSON output.")
     parser.add_argument("--out", type=Path, default=ROOT_DIR / "data" / "member_assistant_poc" / "reply_actions.jsonl")
     args = parser.parse_args()
@@ -70,6 +77,8 @@ def main() -> None:
         app_name=args.app_name,
         require_mention=not args.include_non_mentions,
         human_userid=args.human_userid,
+        assistant_sender_ids=args.assistant_sender_id,
+        recent_context_limit=args.recent_context_limit,
     )
     rows = [reply_action_to_dict(action, include_applescript=args.include_applescript) for action in actions]
 

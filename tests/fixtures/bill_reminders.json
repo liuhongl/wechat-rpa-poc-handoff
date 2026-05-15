@@ -1,0 +1,26 @@
+[
+  {
+    "bill_id": "bill-sky-001",
+    "roomid": "wr_sample_target_room",
+    "chat_name": "模拟外部客户群",
+    "member_name": "sky",
+    "due_date": "2026-05-18",
+    "status": "active"
+  },
+  {
+    "bill_id": "bill-sky-002",
+    "roomid": "wr_sample_target_room",
+    "chat_name": "模拟外部客户群",
+    "member_name": "sky",
+    "due_date": "2026-05-25",
+    "status": "active"
+  },
+  {
+    "bill_id": "bill-sky-003",
+    "roomid": "wr_sample_target_room",
+    "chat_name": "模拟外部客户群",
+    "member_name": "sky",
+    "due_date": "2026-05-18",
+    "status": "settled"
+  }
+]

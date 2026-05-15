@@ -323,9 +323,75 @@ data/member_assistant_poc/processed_msgids.json
 
 如果候选人选择不稳定，需要改成半自动流程：脚本只输入 `@昵称` 并停住，由人工确认候选后再发送。
 
+## 验证 4：触发规则是否可控
+
+触发规则先用模拟会话存档验证，不操作企业微信：
+
+```bash
+.venv/bin/python scripts/member_assistant_reply_planner_poc.py \
+  --sample-plaintext-json tests/fixtures/trigger_rule_messages.json \
+  --target-roomid wr_sample_target_room \
+  --assistant-sender-id wm_sample_assistant \
+  --out /tmp/trigger_rule_actions.jsonl
+```
+
+当前规则：
+
+```text
+[x] 客户 @小助理 + 问题 -> 生成回复
+[x] 客户没 @小助理 -> 默认不回复
+[x] 小助理成员自己发出的消息 -> 跳过，避免自循环
+[x] 客户先发问题，下一条只 @小助理 -> 追溯同一客户近期问题
+[x] 同一客户连续多条消息后再 @小助理 -> 合并近期上下文
+```
+
+输出里的 `question_content` 是真正交给 FAQ/AI 判断的问题文本。比如客户先发“需要经营证明吗”，下一条只发 `@小助理`，输出仍会把 `question_content` 解析为“需要经营证明吗”。
+
+生产接真实会话存档后，需要把小助理成员在会话存档中的发送者 ID 配到：
+
+```ini
+WECOM_ASSISTANT_SENDER_ID=小助理成员的发送者ID
+```
+
+## 验证 5：主动提醒规则是否可控
+
+主动提醒先用模拟账单数据验证，不操作企业微信：
+
+```bash
+.venv/bin/python scripts/bill_reminder_planner_poc.py \
+  --sample-bills-json tests/fixtures/bill_reminders.json \
+  --today 2026-05-15 \
+  --ignore-state \
+  --out /tmp/bill_reminder_actions.jsonl
+```
+
+当前规则：
+
+```text
+[x] 到期前 3/2/1 天生成提醒
+[x] 同一账单同一天只提醒一次
+[x] 已结清账单不提醒
+[x] 不在提醒窗口内的账单不提醒
+[x] 生成的动作包含 @ 微信客户所需的 AppleScript
+```
+
+默认只生成动作计划，不会发送。需要写入本地去重状态时再显式加：
+
+```bash
+.venv/bin/python scripts/bill_reminder_planner_poc.py \
+  --today 2026-05-15 \
+  --mark-planned
+```
+
+状态文件在：
+
+```text
+data/member_assistant_poc/bill_reminder_state.json
+```
+
 ## 后续 MVP 形态
 
-如果三项 POC 都通过，下一步再做真正自动回复：
+如果上述 POC 都通过，下一步再做真正自动回复：
 
 ```text
 定时拉取会话内容存档

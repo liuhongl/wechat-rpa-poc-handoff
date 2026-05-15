@@ -1,0 +1,50 @@
+[
+  {
+    "seq": 2001,
+    "msgid": "trigger-context-question",
+    "action": "send",
+    "from": "wm_sample_customer_sky",
+    "roomid": "wr_sample_target_room",
+    "msgtime": 1710000100000,
+    "msgtype": "text",
+    "text": {
+      "content": "需要经营证明吗"
+    }
+  },
+  {
+    "seq": 2002,
+    "msgid": "trigger-context-mention",
+    "action": "send",
+    "from": "wm_sample_customer_sky",
+    "roomid": "wr_sample_target_room",
+    "msgtime": 1710000105000,
+    "msgtype": "text",
+    "text": {
+      "content": "@小助理"
+    }
+  },
+  {
+    "seq": 2003,
+    "msgid": "trigger-assistant-self",
+    "action": "send",
+    "from": "wm_sample_assistant",
+    "roomid": "wr_sample_target_room",
+    "msgtime": 1710000110000,
+    "msgtype": "text",
+    "text": {
+      "content": "@小助理 贷款利率是多少"
+    }
+  },
+  {
+    "seq": 2004,
+    "msgid": "trigger-non-mention",
+    "action": "send",
+    "from": "wm_sample_customer_sky",
+    "roomid": "wr_sample_target_room",
+    "msgtime": 1710000115000,
+    "msgtype": "text",
+    "text": {
+      "content": "这条没有点名助手，默认不回复"
+    }
+  }
+]

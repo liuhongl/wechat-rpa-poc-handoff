@@ -1,6 +1,8 @@
 import unittest
+from datetime import date
 
 from app.member_assistant_poc import (
+    BillReminder,
     DesktopSendPlan,
     PlainTextRecord,
     build_desktop_preflight_report,
@@ -8,6 +10,7 @@ from app.member_assistant_poc import (
     build_send_text_applescript,
     extract_plain_text_records,
     filter_unprocessed_records,
+    plan_bill_reminder_actions,
     plan_reply_actions,
     record_key,
     resolve_desktop_chat_name,
@@ -174,6 +177,113 @@ class MemberAssistantPocTests(unittest.TestCase):
         self.assertFalse(actions[0].handoff)
         self.assertIn("还款日", actions[0].reply_content)
 
+    def test_plan_reply_actions_ignores_assistant_sender_to_prevent_loop(self) -> None:
+        records = [
+            PlainTextRecord(
+                seq=33,
+                msgid="assistant-self-message",
+                action="send",
+                sender="wm_assistant_member",
+                roomid="target-room",
+                msgtime=1710000000000,
+                content="@小助理 需要经营证明吗",
+            ),
+            PlainTextRecord(
+                seq=34,
+                msgid="customer-message",
+                action="send",
+                sender="wm_customer",
+                roomid="target-room",
+                msgtime=1710000001000,
+                content="@小助理 需要经营证明吗",
+            ),
+        ]
+
+        actions = plan_reply_actions(
+            records,
+            assistant_names=["小助理"],
+            chat_name="外部客户群",
+            assistant_sender_ids=["wm_assistant_member"],
+        )
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].record.msgid, "customer-message")
+
+    def test_plan_reply_actions_uses_previous_question_when_next_message_only_mentions(self) -> None:
+        records = [
+            PlainTextRecord(
+                seq=35,
+                msgid="customer-question",
+                action="send",
+                sender="wm_customer",
+                roomid="target-room",
+                msgtime=1710000000000,
+                content="需要经营证明吗",
+            ),
+            PlainTextRecord(
+                seq=36,
+                msgid="customer-mention",
+                action="send",
+                sender="wm_customer",
+                roomid="target-room",
+                msgtime=1710000005000,
+                content="@小助理",
+            ),
+        ]
+
+        actions = plan_reply_actions(
+            records,
+            assistant_names=["小助理"],
+            chat_name="外部客户群",
+        )
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].record.msgid, "customer-mention")
+        self.assertEqual(actions[0].question_content, "需要经营证明吗")
+        self.assertIn("经营证明", actions[0].reply_content)
+
+    def test_plan_reply_actions_merges_recent_customer_messages_before_mention(self) -> None:
+        records = [
+            PlainTextRecord(
+                seq=37,
+                msgid="customer-context-1",
+                action="send",
+                sender="wm_customer",
+                roomid="target-room",
+                msgtime=1710000000000,
+                content="我想办经营类贷款",
+            ),
+            PlainTextRecord(
+                seq=38,
+                msgid="customer-context-2",
+                action="send",
+                sender="wm_customer",
+                roomid="target-room",
+                msgtime=1710000003000,
+                content="需要经营证明吗",
+            ),
+            PlainTextRecord(
+                seq=39,
+                msgid="customer-mention",
+                action="send",
+                sender="wm_customer",
+                roomid="target-room",
+                msgtime=1710000006000,
+                content="@小助理",
+            ),
+        ]
+
+        actions = plan_reply_actions(
+            records,
+            assistant_names=["小助理"],
+            chat_name="外部客户群",
+        )
+
+        self.assertEqual(len(actions), 1)
+        self.assertIn("我想办经营类贷款", actions[0].question_content or "")
+        self.assertIn("需要经营证明吗", actions[0].question_content or "")
+        self.assertFalse(actions[0].handoff)
+
     def test_filter_unprocessed_records_uses_msgid_or_seq_fallback(self) -> None:
         records = [
             PlainTextRecord(
@@ -238,6 +348,62 @@ class MemberAssistantPocTests(unittest.TestCase):
             resolve_desktop_chat_name("", run=False),
             "模拟外部客户群",
         )
+
+    def test_plan_bill_reminder_actions_reminds_three_days_before_once(self) -> None:
+        reminders = [
+            BillReminder(
+                bill_id="bill-sky-001",
+                roomid="target-room",
+                chat_name="外部客户群",
+                member_name="sky",
+                due_date=date(2026, 5, 18),
+            )
+        ]
+
+        actions = plan_bill_reminder_actions(
+            reminders,
+            today=date(2026, 5, 15),
+            sent_keys=[],
+        )
+
+        self.assertEqual(len(actions), 1)
+        self.assertEqual(actions[0].days_before, 3)
+        self.assertIn("3天", actions[0].message)
+        self.assertIn('set mentionText to "@sky"', actions[0].applescript)
+
+        duplicate_actions = plan_bill_reminder_actions(
+            reminders,
+            today=date(2026, 5, 15),
+            sent_keys=[actions[0].state_key],
+        )
+        self.assertEqual(duplicate_actions, [])
+
+    def test_plan_bill_reminder_actions_skips_settled_and_outside_window(self) -> None:
+        reminders = [
+            BillReminder(
+                bill_id="settled-bill",
+                roomid="target-room",
+                chat_name="外部客户群",
+                member_name="sky",
+                due_date=date(2026, 5, 18),
+                status="settled",
+            ),
+            BillReminder(
+                bill_id="future-bill",
+                roomid="target-room",
+                chat_name="外部客户群",
+                member_name="sky",
+                due_date=date(2026, 5, 25),
+            ),
+        ]
+
+        actions = plan_bill_reminder_actions(
+            reminders,
+            today=date(2026, 5, 15),
+            sent_keys=[],
+        )
+
+        self.assertEqual(actions, [])
 
 
 if __name__ == "__main__":
