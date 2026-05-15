@@ -2,10 +2,13 @@ import unittest
 
 from app.member_assistant_poc import (
     DesktopSendPlan,
+    PlainTextRecord,
     build_at_member_applescript,
     build_send_text_applescript,
     extract_plain_text_records,
+    filter_unprocessed_records,
     plan_reply_actions,
+    record_key,
 )
 
 
@@ -168,6 +171,32 @@ class MemberAssistantPocTests(unittest.TestCase):
         self.assertEqual(len(actions), 1)
         self.assertFalse(actions[0].handoff)
         self.assertIn("还款日", actions[0].reply_content)
+
+    def test_filter_unprocessed_records_uses_msgid_or_seq_fallback(self) -> None:
+        records = [
+            PlainTextRecord(
+                seq=41,
+                msgid="msg-41",
+                action="send",
+                sender="wm_customer",
+                roomid="target-room",
+                msgtime=1710000000000,
+                content="@小助理 需要经营证明吗",
+            ),
+            PlainTextRecord(
+                seq=42,
+                msgid="",
+                action="send",
+                sender="wm_customer",
+                roomid="target-room",
+                msgtime=1710000001000,
+                content="@小助理 贷款利率是多少",
+            ),
+        ]
+
+        processed = {record_key(records[0]), "target-room:42"}
+
+        self.assertEqual(filter_unprocessed_records(records, processed), [])
 
 
 if __name__ == "__main__":

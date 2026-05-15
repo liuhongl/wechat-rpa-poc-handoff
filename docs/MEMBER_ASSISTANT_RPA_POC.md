@@ -141,6 +141,69 @@ data/member_assistant_poc/reply_actions.jsonl
 [ ] 生成的 AppleScript 默认不包含真正发送动作
 ```
 
+## 模拟端到端自动回复干跑
+
+端到端脚本会把上面的步骤串起来：
+
+```text
+模拟会话存档明文 -> 过滤目标 roomid -> 跳过已处理 msgid -> 生成回复 -> 可选调用桌面客户端
+```
+
+默认只打印动作计划，不操作企业微信：
+
+```bash
+.venv/bin/python scripts/member_assistant_desktop_auto_reply_poc.py \
+  --sample-plaintext-json tests/fixtures/msgaudit_plaintext_messages.json \
+  --target-roomid wr_sample_target_room \
+  --chat-name "模拟外部客户群"
+```
+
+默认每次最多处理 1 条动作，避免误触发批量回复。要多处理可显式指定：
+
+```bash
+.venv/bin/python scripts/member_assistant_desktop_auto_reply_poc.py \
+  --max-actions 3
+```
+
+运行 AppleScript 但不发送，只把回复输入到企业微信聊天框：
+
+```bash
+.venv/bin/python scripts/member_assistant_desktop_auto_reply_poc.py \
+  --chat-name "目标外部客户群名称" \
+  --run
+```
+
+真正发送需要显式加 `--send`：
+
+```bash
+.venv/bin/python scripts/member_assistant_desktop_auto_reply_poc.py \
+  --chat-name "目标外部客户群名称" \
+  --send
+```
+
+`--send` 会在成功执行后把消息标记为已处理，状态文件在：
+
+```text
+data/member_assistant_poc/processed_msgids.json
+```
+
+如果要忽略状态重新模拟：
+
+```bash
+.venv/bin/python scripts/member_assistant_desktop_auto_reply_poc.py \
+  --ignore-state
+```
+
+成功标准：
+
+```text
+[ ] 默认不打开或操作企业微信
+[ ] 默认只计划 1 条回复动作
+[ ] 重复发送时能通过 processed_msgids 跳过已处理消息
+[ ] --run 只输入不发送
+[ ] --send 才真正发送并标记已处理
+```
+
 ## 验证 2：客户端能否定位群并发送文本
 
 只打印 AppleScript，不操作客户端：

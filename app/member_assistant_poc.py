@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Iterable
 
 from app.bot_logic import BotReply, answer
@@ -73,6 +75,41 @@ def extract_plain_text_records(
         )
 
     return records
+
+
+def record_key(record: PlainTextRecord) -> str:
+    if record.msgid:
+        return record.msgid
+    return f"{record.roomid}:{record.seq}"
+
+
+def filter_unprocessed_records(
+    records: Iterable[PlainTextRecord],
+    processed_keys: Iterable[str],
+) -> list[PlainTextRecord]:
+    processed = set(processed_keys)
+    return [record for record in records if record_key(record) not in processed]
+
+
+def load_processed_keys(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    payload = path.read_text(encoding="utf-8").strip()
+    if not payload:
+        return set()
+    data = json.loads(payload)
+    if not isinstance(data, list):
+        raise ValueError("processed state must be a JSON list")
+    return {str(item) for item in data}
+
+
+def save_processed_keys(path: Path, keys: Iterable[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = sorted(set(keys))
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
 
 def plan_reply_actions(
