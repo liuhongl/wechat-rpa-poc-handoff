@@ -1,0 +1,197 @@
+# 企业微信成员型小助理 RPA POC
+
+## 目标
+
+验证“真实企业微信成员账号作为小助理”是否能在外部客户群里形成自动回复闭环。
+
+完整闭环分成三件事：
+
+```text
+会话内容存档读取外部客户群消息
+企业微信客户端定位外部客户群并发送文本
+企业微信客户端能否真正 @ 某个微信客户
+```
+
+这条路线不是纯官方服务端 API。官方 API 负责读取和管理，最后“以成员身份发消息”依赖企业微信桌面客户端自动化。
+
+## 关键结论
+
+1. AI 生成回复不是难点。
+2. 难点是外部客户群没有开放“程序直接以成员身份发消息”的官方服务端接口。
+3. 因此本 POC 的核心是验证桌面客户端自动化是否足够稳定。
+
+## 前置条件
+
+### 会话内容存档
+
+企业微信后台需要开通会话内容存档，并准备：
+
+```ini
+WECOM_CORP_ID=
+WECOM_MSGAUDIT_SECRET=
+WECOM_MSGAUDIT_PRIVATE_KEY_PATH=
+WECOM_MSGAUDIT_SDK_LIB_PATH=
+WECOM_MSGAUDIT_TARGET_ROOMID=
+```
+
+`WECOM_MSGAUDIT_SDK_LIB_PATH` 通常指向企业微信会话内容存档 SDK 里的动态库，例如 macOS 下的 `libWeWorkFinanceSdk_C.dylib`。
+
+私钥文件不要提交到仓库。
+
+### 桌面自动化
+
+当前脚本使用 macOS AppleScript/System Events，需要：
+
+1. Mac 已登录企业微信客户端。
+2. “小助理”企业微信成员账号已在目标外部客户群内。
+3. 系统设置允许终端或 Codex 控制电脑：`系统设置 -> 隐私与安全性 -> 辅助功能`。
+4. `.env` 里配置目标群名和待 @ 的微信客户昵称：
+
+```ini
+WECOM_DESKTOP_APP_NAME=企业微信
+WECOM_DESKTOP_TARGET_CHAT_NAME=目标外部客户群名称
+WECOM_DESKTOP_AT_MEMBER_NAME=微信客户在群里的昵称
+```
+
+## 验证 1：会话内容存档能否读到群消息
+
+先用样例明文 JSON 验证解析逻辑：
+
+```bash
+.venv/bin/python scripts/msgaudit_reader_poc.py \
+  --sample-plaintext-json /absolute/path/to/sample_messages.json \
+  --target-roomid wrxxxx
+```
+
+真实 SDK 拉取：
+
+```bash
+.venv/bin/python scripts/msgaudit_reader_poc.py \
+  --seq 0 \
+  --limit 100 \
+  --target-roomid "$WECOM_MSGAUDIT_TARGET_ROOMID"
+```
+
+成功标准：
+
+```text
+[ ] 客户在目标外部客户群发消息后，脚本能读到记录
+[ ] 输出包含 seq/msgid/from/roomid/content
+[ ] roomid 是目标客户群
+[ ] 重复运行不会把其他群消息误判为目标群消息
+```
+
+输出会追加到：
+
+```text
+data/member_assistant_poc/msgaudit_records.jsonl
+```
+
+`data/` 已被 `.gitignore` 忽略。
+
+## 验证 2：客户端能否定位群并发送文本
+
+只打印 AppleScript，不操作客户端：
+
+```bash
+.venv/bin/python scripts/wecom_desktop_send_poc.py \
+  --chat-name "目标外部客户群名称" \
+  --message "POC测试：只打印脚本" \
+  --print-script
+```
+
+运行但不发送，只把内容输入到聊天框：
+
+```bash
+.venv/bin/python scripts/wecom_desktop_send_poc.py \
+  --chat-name "目标外部客户群名称" \
+  --message "POC测试：只输入不发送" \
+  --run
+```
+
+真正发送：
+
+```bash
+.venv/bin/python scripts/wecom_desktop_send_poc.py \
+  --chat-name "目标外部客户群名称" \
+  --message "POC测试：企业微信客户端自动化发送文本" \
+  --run \
+  --send
+```
+
+成功标准：
+
+```text
+[ ] 企业微信客户端被激活
+[ ] 能通过搜索打开目标外部客户群
+[ ] dry-run 时只输入不发送
+[ ] --send 时群内能看到小助理成员发出的文本
+[ ] 连续 3 次成功定位同一个群
+```
+
+## 验证 3：能否真正 @ 微信客户
+
+只打印脚本：
+
+```bash
+.venv/bin/python scripts/wecom_at_member_poc.py \
+  --chat-name "目标外部客户群名称" \
+  --member-name "11" \
+  --message "账单还有3天到期，请确认。" \
+  --print-script
+```
+
+运行但不发送：
+
+```bash
+.venv/bin/python scripts/wecom_at_member_poc.py \
+  --chat-name "目标外部客户群名称" \
+  --member-name "11" \
+  --message "账单还有3天到期，请确认。" \
+  --run
+```
+
+真正发送：
+
+```bash
+.venv/bin/python scripts/wecom_at_member_poc.py \
+  --chat-name "目标外部客户群名称" \
+  --member-name "11" \
+  --message "账单还有3天到期，请确认。" \
+  --run \
+  --send
+```
+
+成功标准：
+
+```text
+[ ] 输入 @昵称 后出现候选人
+[ ] 脚本按回车能选中正确微信客户
+[ ] 发送后群内显示为真正 @，不是普通文本
+[ ] 微信客户侧收到被 @ 提醒
+```
+
+如果候选人选择不稳定，需要改成半自动流程：脚本只输入 `@昵称` 并停住，由人工确认候选后再发送。
+
+## 后续 MVP 形态
+
+如果三项 POC 都通过，下一步再做真正自动回复：
+
+```text
+定时拉取会话内容存档
+按 roomid 过滤目标客户群
+只处理 @小助理 或关键词触发的客户消息
+AI/FAQ 生成回复
+敏感词和置信度校验
+企业微信客户端自动发送
+记录每次输入、回复、发送结果
+```
+
+金融类话术必须保守：不能承诺审批结果、额度、利率，只能给资料说明、流程说明和转人工提示。
+
+## 风险
+
+1. 桌面自动化受 UI、焦点、语言、窗口状态影响，生产稳定性弱于官方 API。
+2. 真正 @ 微信客户依赖客户端候选列表，昵称重复时容易选错。
+3. 会话内容存档涉及客户同意和合规配置，必须按企业微信要求开通。
+4. 高频自动回复可能触发客户体验和风控问题，建议只对明确 @ 小助理的消息响应。
