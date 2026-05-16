@@ -479,6 +479,43 @@ tests/fixtures/multi_group_msgaudit_messages.json
 
 后期接真实会话内容存档时，应把真实 SDK 解密后的消息转换成同样的明文结构，后续多群回复规划逻辑不需要重写。
 
+### 多群发送侧 dry-run
+
+把多群回复任务转换成桌面发送计划，默认不操作企业微信：
+
+```bash
+.venv/bin/python scripts/multi_group_desktop_sender_poc.py \
+  --reply-jobs-jsonl /tmp/multi_group_reply_jobs.jsonl \
+  --max-jobs 10 \
+  --include-applescript \
+  --out /tmp/multi_group_desktop_send_plans.jsonl
+```
+
+输出应能看到每条任务都带着正确的 `chat_name`：
+
+```text
+auto-loan-sky-001 -> 汽车贷款小助手
+vip-kay-001 -> 汽车金融VIP群
+```
+
+真正写入企业微信输入框需要显式加 `--run`，默认最多处理 1 条，避免一次性批量误触发：
+
+```bash
+.venv/bin/python scripts/multi_group_desktop_sender_poc.py \
+  --reply-jobs-jsonl /tmp/multi_group_reply_jobs.jsonl \
+  --run
+```
+
+真正发送必须显式加 `--send`：
+
+```bash
+.venv/bin/python scripts/multi_group_desktop_sender_poc.py \
+  --reply-jobs-jsonl /tmp/multi_group_reply_jobs.jsonl \
+  --send
+```
+
+发送侧使用剪贴板粘贴回复内容，避免 AppleScript 直接输入中文时出现乱码。
+
 ## 验证 5：主动提醒规则是否可控
 
 主动提醒先用模拟账单数据验证，不操作企业微信：
