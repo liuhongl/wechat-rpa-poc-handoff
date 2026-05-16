@@ -1,0 +1,17 @@
+[
+  {
+    "roomid": "wr_auto_loan_group",
+    "chat_name": "汽车贷款小助手",
+    "enabled": true
+  },
+  {
+    "roomid": "wr_vip_group",
+    "chat_name": "汽车金融VIP群",
+    "enabled": true
+  },
+  {
+    "roomid": "wr_disabled_group",
+    "chat_name": "暂停自动回复群",
+    "enabled": false
+  }
+]

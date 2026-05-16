@@ -424,6 +424,61 @@ data/member_assistant_poc/processed_msgids.json
 WECOM_ASSISTANT_SENDER_ID=小助理成员的发送者ID
 ```
 
+## 验证 4.1：多群自动回复方案是否成立
+
+当前阶段的目标是验证方案是否可以成立，而不是先追求生产级无人值守。核心验证链路是：
+
+```text
+模拟会话存档消息
+-> 多个 roomid 区分外部群
+-> 只处理启用群
+-> 只处理 @刘红利 的客户文本消息
+-> 按 msgid 去重
+-> 生成对应群的回复发送任务
+```
+
+运行多群 dry-run：
+
+```bash
+.venv/bin/python scripts/multi_group_reply_planner_poc.py \
+  --assistant-name "刘红利" \
+  --ignore-state \
+  --out /tmp/multi_group_reply_jobs.jsonl
+```
+
+样例配置在：
+
+```text
+tests/fixtures/multi_group_targets.json
+tests/fixtures/multi_group_msgaudit_messages.json
+```
+
+当前样例会生成两条回复任务：
+
+```text
+汽车贷款小助手 / sky / 需要经营证明吗
+汽车金融VIP群 / kay / 贷款利率是多少
+```
+
+并跳过：
+
+```text
+[x] 未 @刘红利 的普通消息
+[x] 未配置 roomid 的未知群
+[x] 配置为 enabled=false 的暂停群
+[x] 非文本消息
+```
+
+如果要把已生成任务标记为已处理，避免重复规划：
+
+```bash
+.venv/bin/python scripts/multi_group_reply_planner_poc.py \
+  --assistant-name "刘红利" \
+  --mark-planned
+```
+
+后期接真实会话内容存档时，应把真实 SDK 解密后的消息转换成同样的明文结构，后续多群回复规划逻辑不需要重写。
+
 ## 验证 5：主动提醒规则是否可控
 
 主动提醒先用模拟账单数据验证，不操作企业微信：

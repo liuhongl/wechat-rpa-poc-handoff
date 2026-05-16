@@ -4,6 +4,7 @@ from datetime import date
 from app.member_assistant_poc import (
     BillReminder,
     DesktopSendPlan,
+    GroupReplyTarget,
     PlainTextRecord,
     build_desktop_preflight_report,
     build_at_member_applescript,
@@ -12,8 +13,10 @@ from app.member_assistant_poc import (
     extract_plain_text_records,
     filter_unprocessed_records,
     plan_bill_reminder_actions,
+    plan_multi_group_reply_jobs,
     plan_reply_actions,
     record_key,
+    reply_job_to_dict,
     resolve_assistant_names,
     resolve_desktop_chat_name,
 )
@@ -415,6 +418,79 @@ class MemberAssistantPocTests(unittest.TestCase):
         self.assertEqual(resolve_assistant_names(["刘红利"], env_value="小助理"), ["刘红利"])
         self.assertEqual(resolve_assistant_names([], env_value="刘红利,小助理"), ["刘红利", "小助理"])
         self.assertEqual(resolve_assistant_names([], env_value=""), ["小助理"])
+
+    def test_plan_multi_group_reply_jobs_routes_enabled_groups_and_mentions_only(self) -> None:
+        records = [
+            PlainTextRecord(
+                seq=501,
+                msgid="loan-room-sky-001",
+                action="send",
+                sender="sky",
+                roomid="wr_loan_group",
+                msgtime=1710000000000,
+                content="需要经营证明吗 @刘红利",
+            ),
+            PlainTextRecord(
+                seq=502,
+                msgid="vip-room-kay-001",
+                action="send",
+                sender="kay",
+                roomid="wr_vip_group",
+                msgtime=1710000001000,
+                content="贷款利率是多少 @刘红利",
+            ),
+            PlainTextRecord(
+                seq=503,
+                msgid="loan-room-sky-002",
+                action="send",
+                sender="sky",
+                roomid="wr_loan_group",
+                msgtime=1710000002000,
+                content="这条没 @ 不应该自动回复",
+            ),
+            PlainTextRecord(
+                seq=504,
+                msgid="disabled-room-001",
+                action="send",
+                sender="wm_customer",
+                roomid="wr_disabled_group",
+                msgtime=1710000003000,
+                content="需要经营证明吗 @刘红利",
+            ),
+            PlainTextRecord(
+                seq=505,
+                msgid="unknown-room-001",
+                action="send",
+                sender="wm_customer",
+                roomid="wr_unknown_group",
+                msgtime=1710000004000,
+                content="需要经营证明吗 @刘红利",
+            ),
+        ]
+        targets = [
+            GroupReplyTarget(roomid="wr_loan_group", chat_name="汽车贷款小助手"),
+            GroupReplyTarget(roomid="wr_vip_group", chat_name="汽车金融VIP群"),
+            GroupReplyTarget(roomid="wr_disabled_group", chat_name="禁用测试群", enabled=False),
+        ]
+
+        jobs = plan_multi_group_reply_jobs(
+            records,
+            group_targets=targets,
+            assistant_names=["刘红利"],
+            processed_keys={"vip-room-kay-001"},
+        )
+
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0].roomid, "wr_loan_group")
+        self.assertEqual(jobs[0].chat_name, "汽车贷款小助手")
+        self.assertEqual(jobs[0].source_msgid, "loan-room-sky-001")
+        self.assertEqual(jobs[0].question_content, "需要经营证明吗")
+        self.assertIn("经营证明", jobs[0].reply_content)
+        self.assertIn('set targetChat to "汽车贷款小助手"', jobs[0].applescript)
+
+        payload = reply_job_to_dict(jobs[0])
+        self.assertEqual(payload["chat_name"], "汽车贷款小助手")
+        self.assertEqual(payload["source_msgid"], "loan-room-sky-001")
 
     def test_plan_bill_reminder_actions_reminds_three_days_before_once(self) -> None:
         reminders = [

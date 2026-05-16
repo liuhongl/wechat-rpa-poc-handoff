@@ -44,6 +44,28 @@ class ReplyAction:
 
 
 @dataclass(frozen=True)
+class GroupReplyTarget:
+    roomid: str
+    chat_name: str
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class MultiGroupReplyJob:
+    roomid: str
+    chat_name: str
+    source_msgid: str
+    sender: str
+    content: str
+    reply_content: str
+    matched_question: str | None
+    score: float
+    handoff: bool
+    question_content: str | None
+    applescript: str
+
+
+@dataclass(frozen=True)
 class BillReminder:
     bill_id: str
     roomid: str
@@ -318,6 +340,70 @@ def plan_reply_actions(
     return actions
 
 
+def plan_multi_group_reply_jobs(
+    records: Iterable[PlainTextRecord],
+    *,
+    group_targets: Iterable[GroupReplyTarget],
+    assistant_names: Iterable[str],
+    processed_keys: Iterable[str] = (),
+    app_name: str = "企业微信",
+    require_mention: bool = True,
+    send: bool = False,
+    human_userid: str = "",
+    assistant_sender_ids: Iterable[str] = (),
+    recent_context_limit: int = 3,
+    recent_context_window_ms: int = 10 * 60 * 1000,
+) -> list[MultiGroupReplyJob]:
+    targets_by_roomid = {
+        target.roomid: target
+        for target in group_targets
+        if target.enabled and target.roomid.strip() and target.chat_name.strip()
+    }
+    processed = set(processed_keys)
+    records_by_roomid: dict[str, list[PlainTextRecord]] = {}
+
+    for record in records:
+        if record.roomid not in targets_by_roomid:
+            continue
+        if record_key(record) in processed:
+            continue
+        records_by_roomid.setdefault(record.roomid, []).append(record)
+
+    jobs: list[MultiGroupReplyJob] = []
+    for roomid, room_records in records_by_roomid.items():
+        target = targets_by_roomid[roomid]
+        actions = plan_reply_actions(
+            room_records,
+            assistant_names=assistant_names,
+            chat_name=target.chat_name,
+            app_name=app_name,
+            require_mention=require_mention,
+            send=send,
+            human_userid=human_userid,
+            assistant_sender_ids=assistant_sender_ids,
+            recent_context_limit=recent_context_limit,
+            recent_context_window_ms=recent_context_window_ms,
+        )
+        for action in actions:
+            jobs.append(
+                MultiGroupReplyJob(
+                    roomid=roomid,
+                    chat_name=target.chat_name,
+                    source_msgid=record_key(action.record),
+                    sender=action.record.sender,
+                    content=action.record.content,
+                    reply_content=action.reply_content,
+                    matched_question=action.matched_question,
+                    score=action.score,
+                    handoff=action.handoff,
+                    question_content=action.question_content,
+                    applescript=action.applescript,
+                )
+            )
+
+    return jobs
+
+
 def plan_bill_reminder_actions(
     reminders: Iterable[BillReminder],
     *,
@@ -395,6 +481,24 @@ def reply_action_to_dict(action: ReplyAction, *, include_applescript: bool = Fal
     }
     if include_applescript:
         payload["applescript"] = action.applescript
+    return payload
+
+
+def reply_job_to_dict(job: MultiGroupReplyJob, *, include_applescript: bool = False) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "roomid": job.roomid,
+        "chat_name": job.chat_name,
+        "source_msgid": job.source_msgid,
+        "sender": job.sender,
+        "content": job.content,
+        "reply_content": job.reply_content,
+        "question_content": job.question_content,
+        "matched_question": job.matched_question,
+        "score": round(job.score, 4),
+        "handoff": job.handoff,
+    }
+    if include_applescript:
+        payload["applescript"] = job.applescript
     return payload
 
 

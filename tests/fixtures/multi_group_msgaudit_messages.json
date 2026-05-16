@@ -1,0 +1,81 @@
+[
+  {
+    "seq": 2001,
+    "msgid": "auto-loan-sky-001",
+    "action": "send",
+    "from": "sky",
+    "tolist": ["LiuHongLi"],
+    "roomid": "wr_auto_loan_group",
+    "msgtime": 1710000000000,
+    "msgtype": "text",
+    "text": {
+      "content": "需要经营证明吗 @刘红利"
+    }
+  },
+  {
+    "seq": 2002,
+    "msgid": "vip-kay-001",
+    "action": "send",
+    "from": "kay",
+    "tolist": ["LiuHongLi"],
+    "roomid": "wr_vip_group",
+    "msgtime": 1710000001000,
+    "msgtype": "text",
+    "text": {
+      "content": "贷款利率是多少 @刘红利"
+    }
+  },
+  {
+    "seq": 2003,
+    "msgid": "auto-loan-sky-002",
+    "action": "send",
+    "from": "sky",
+    "tolist": ["LiuHongLi"],
+    "roomid": "wr_auto_loan_group",
+    "msgtime": 1710000002000,
+    "msgtype": "text",
+    "text": {
+      "content": "这条没有@，默认不应该自动回复"
+    }
+  },
+  {
+    "seq": 2004,
+    "msgid": "disabled-room-001",
+    "action": "send",
+    "from": "wm_customer",
+    "tolist": ["LiuHongLi"],
+    "roomid": "wr_disabled_group",
+    "msgtime": 1710000003000,
+    "msgtype": "text",
+    "text": {
+      "content": "需要经营证明吗 @刘红利"
+    }
+  },
+  {
+    "seq": 2005,
+    "msgid": "unknown-room-001",
+    "action": "send",
+    "from": "wm_customer",
+    "tolist": ["LiuHongLi"],
+    "roomid": "wr_unknown_group",
+    "msgtime": 1710000004000,
+    "msgtype": "text",
+    "text": {
+      "content": "贷款利率是多少 @刘红利"
+    }
+  },
+  {
+    "seq": 2006,
+    "msgid": "auto-loan-image-001",
+    "action": "send",
+    "from": "sky",
+    "tolist": ["LiuHongLi"],
+    "roomid": "wr_auto_loan_group",
+    "msgtime": 1710000005000,
+    "msgtype": "image",
+    "image": {
+      "md5sum": "sample",
+      "filesize": 1024
+    }
+  }
+]
