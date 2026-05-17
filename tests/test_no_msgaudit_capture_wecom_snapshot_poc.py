@@ -101,6 +101,53 @@ class NoMsgAuditCaptureWeComSnapshotPocTests(unittest.TestCase):
             self.assertEqual(payload["source"], "source_text_file")
             self.assertGreater(payload["bytes"], 0)
 
+    def test_capture_script_can_write_multiple_iterations_without_overwriting(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_capture_wecom_snapshot_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            source = tmp_path / "source.txt"
+            snapshot_dir = tmp_path / "snapshots"
+            source.write_text(
+                "83 文本栏 (settable, string) 汽车金融VIP群\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--source-text-file",
+                    str(source),
+                    "--snapshot-dir",
+                    str(snapshot_dir),
+                    "--captured-at",
+                    "2026-05-17T10:00:00+08:00",
+                    "--prefix",
+                    "wecom-live",
+                    "--iterations",
+                    "2",
+                    "--interval-seconds",
+                    "0",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            payloads = [json.loads(line) for line in result.stdout.splitlines()]
+            paths = [Path(payload["path"]) for payload in payloads]
+
+            self.assertEqual(len(payloads), 2)
+            self.assertNotEqual(paths[0], paths[1])
+            self.assertTrue(paths[0].name.startswith("wecom-live-20260517T100000-001"))
+            self.assertTrue(paths[1].name.startswith("wecom-live-20260517T100000-002"))
+            self.assertTrue(paths[0].exists())
+            self.assertTrue(paths[1].exists())
+            self.assertEqual(payloads[0]["iteration"], 1)
+            self.assertEqual(payloads[1]["iteration"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

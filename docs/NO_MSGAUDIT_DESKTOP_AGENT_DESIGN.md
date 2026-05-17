@@ -454,6 +454,7 @@ send_plan
 [ ] 打开目标群后读取最近上下文
 [x] 从真实企业微信初步采集顶部群名、左侧选中会话、输入框内容
 [x] 用桌面快照校验顶部群名和左侧选中会话
+[x] 用 Swift AX 连续采集真实企业微信 UI tree 快照
 [ ] 只写草稿，不发送
 ```
 
@@ -575,10 +576,30 @@ applescript：使用 AppleScript/System Events
   --prefix wecom-live
 ```
 
+连续采集可以使用：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_capture_wecom_snapshot_poc.py \
+  --app-name "企业微信" \
+  --capture-method swift-ax \
+  --snapshot-dir data/no_msgaudit_desktop_agent/accessibility_snapshots \
+  --prefix wecom-live \
+  --iterations 2 \
+  --interval-seconds 0
+```
+
+多次采集会写出带序号的快照文件，例如：
+
+```text
+wecom-live-20260517T233159-001.txt
+wecom-live-20260517T233159-002.txt
+```
+
 2026-05-17 本机实测结果：
 
 ```text
 [x] Swift AX 成功采集真实企业微信 UI tree，写出约 12KB 快照
+[x] Swift AX 连续采集 2 次成功，写出 2 份独立快照
 [x] Swift AX 快照可以被 no_msgaudit_desktop_scan_poc.py 解析
 [x] 当前群识别为 汽车金融VIP群
 [x] 汽车金融VIP群 send_preflight=ready_to_draft，其他群 blocked
@@ -586,11 +607,21 @@ applescript：使用 AppleScript/System Events
 [!] 输出错误：no accessible UI tree from WeCom desktop
 ```
 
+重要边界：
+
+```text
+[!] 当前扫描器使用真实 Swift AX 快照做桌面状态和发送前校验
+[!] 当前 reply event 仍来自模拟 GUI 快照输入，不是来自真实 Swift AX 消息流
+[!] 真实 Swift AX 快照能看到当前群名、成员列表、部分可见消息文本
+[!] 但当前还没有稳定解析出“消息发送者 + @触发 + 消息内容”的完整 WeComEvent
+```
+
 因此现阶段事实判断更新为：
 
 ```text
 Computer Use 可以读到真实企业微信 accessibility tree
 Swift AX 可以读到真实企业微信 accessibility tree，并可接入 snapshot 目录
+Swift AX 连续采集可以支撑当前群校验和发送前 preflight
 AppleScript/System Events 不能稳定读到真实企业微信 UI tree
 ```
 

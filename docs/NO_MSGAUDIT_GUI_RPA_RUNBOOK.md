@@ -26,10 +26,10 @@
 继续使用当前分支：
 
 ```text
-poc/member-assistant-rpa
+poc/no-msgaudit-desktop-agent
 ```
 
-暂时不需要创建新分支。当前改动仍属于“成员型小助手 RPA POC”验证线。
+暂时不需要创建新分支。当前改动仍属于“无会话内容存档桌面 Agent POC”验证线。
 
 只有进入以下独立方向时再开新分支：
 

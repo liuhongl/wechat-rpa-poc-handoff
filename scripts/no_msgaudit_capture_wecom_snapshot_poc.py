@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -207,10 +208,12 @@ def _write_snapshot(
     captured_at: str,
     content: str,
     source: str,
+    iteration: int | None = None,
 ) -> dict[str, object]:
     timestamp = _timestamp_for_filename(captured_at)
     snapshot_dir.mkdir(parents=True, exist_ok=True)
-    path = snapshot_dir / f"{prefix}-{timestamp}.txt"
+    iteration_suffix = f"-{iteration:03d}" if iteration is not None else ""
+    path = snapshot_dir / f"{prefix}-{timestamp}{iteration_suffix}.txt"
     path.write_text(content, encoding="utf-8")
     return {
         "path": str(path),
@@ -234,24 +237,37 @@ def main() -> None:
     )
     parser.add_argument("--prefix", default="wecom")
     parser.add_argument("--captured-at", default="")
+    parser.add_argument("--iterations", type=int, default=1)
+    parser.add_argument("--interval-seconds", type=float, default=2.0)
     args = parser.parse_args()
 
-    captured_at = args.captured_at or _now_iso()
-    if args.source_text_file:
-        content = args.source_text_file.read_text(encoding="utf-8")
-        source = "source_text_file"
-    else:
-        content = _read_wecom_accessibility_tree(args.app_name, capture_method=args.capture_method)
-        source = args.capture_method
+    if args.iterations < 1:
+        parser.error("--iterations must be >= 1")
+    if args.interval_seconds < 0:
+        parser.error("--interval-seconds must be >= 0")
 
-    payload = _write_snapshot(
-        snapshot_dir=args.snapshot_dir,
-        prefix=args.prefix,
-        captured_at=captured_at,
-        content=content,
-        source=source,
-    )
-    print(json.dumps(payload, ensure_ascii=False), flush=True)
+    for index in range(args.iterations):
+        captured_at = args.captured_at or _now_iso()
+        if args.source_text_file:
+            content = args.source_text_file.read_text(encoding="utf-8")
+            source = "source_text_file"
+        else:
+            content = _read_wecom_accessibility_tree(args.app_name, capture_method=args.capture_method)
+            source = args.capture_method
+
+        payload = _write_snapshot(
+            snapshot_dir=args.snapshot_dir,
+            prefix=args.prefix,
+            captured_at=captured_at,
+            content=content,
+            source=source,
+            iteration=index + 1 if args.iterations > 1 else None,
+        )
+        payload["iteration"] = index + 1
+        print(json.dumps(payload, ensure_ascii=False), flush=True)
+
+        if index < args.iterations - 1 and args.interval_seconds > 0:
+            time.sleep(args.interval_seconds)
 
 
 if __name__ == "__main__":
