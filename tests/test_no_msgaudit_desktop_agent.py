@@ -1125,6 +1125,208 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual(summary["last_heartbeat_age_seconds"], 120)
         self.assertIn("stale_heartbeat", summary["failures"])
 
+    def test_no_msgaudit_trial_report_poc_accepts_stable_dry_run_log(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_trial_report_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            log_path = tmp_path / "desktop_scan_log.jsonl"
+            targets_path = tmp_path / "targets.json"
+            targets_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "roomid": "wr_auto_loan_group",
+                            "chat_name": "汽车贷款小助手",
+                            "enabled": True,
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            log_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "scan_heartbeat",
+                                "iteration": 1,
+                                "captured_at": "2026-05-18T10:00:00+08:00",
+                                "snapshot_ref": "/tmp/wecom/001.txt",
+                                "send_plan_count": 0,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "wecom_event",
+                                "event_id": "ax:汽车贷款小助手:sky:需要经营证明吗 @刘红利",
+                                "chat_name": "汽车贷款小助手",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "send_plan",
+                                "job_id": "reply:ax:汽车贷款小助手:sky:需要经营证明吗 @刘红利",
+                                "event_id": "ax:汽车贷款小助手:sky:需要经营证明吗 @刘红利",
+                                "chat_name": "汽车贷款小助手",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "send_preflight",
+                                "job_id": "reply:ax:汽车贷款小助手:sky:需要经营证明吗 @刘红利",
+                                "event_id": "ax:汽车贷款小助手:sky:需要经营证明吗 @刘红利",
+                                "status": "ready_to_draft",
+                                "failures": [],
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "scan_heartbeat",
+                                "iteration": 2,
+                                "captured_at": "2026-05-18T10:01:10+08:00",
+                                "snapshot_ref": "/tmp/wecom/002.txt",
+                                "send_plan_count": 1,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--log-jsonl",
+                    str(log_path),
+                    "--group-targets-json",
+                    str(targets_path),
+                    "--min-duration-seconds",
+                    "60",
+                    "--min-heartbeat-count",
+                    "2",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+        report = json.loads(result.stdout)
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["status"], "accepted")
+        self.assertEqual(report["duration_seconds"], 70)
+        self.assertEqual(report["heartbeat_count"], 2)
+        self.assertEqual(report["send_plan_count"], 1)
+        self.assertEqual(report["ready_preflight_count"], 1)
+        self.assertEqual(report["duplicate_send_plan_event_ids"], [])
+        self.assertEqual(report["failures"], [])
+
+    def test_no_msgaudit_trial_report_poc_fails_on_duplicate_send_plan_and_unknown_chat(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_trial_report_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            log_path = tmp_path / "desktop_scan_log.jsonl"
+            targets_path = tmp_path / "targets.json"
+            targets_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "roomid": "wr_auto_loan_group",
+                            "chat_name": "汽车贷款小助手",
+                            "enabled": True,
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            log_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "scan_heartbeat",
+                                "iteration": 1,
+                                "captured_at": "2026-05-18T10:00:00+08:00",
+                                "snapshot_ref": "/tmp/wecom/001.txt",
+                                "send_plan_count": 2,
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "send_plan",
+                                "job_id": "reply:duplicate-1",
+                                "event_id": "duplicate-event",
+                                "chat_name": "未授权群",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "send_plan",
+                                "job_id": "reply:duplicate-2",
+                                "event_id": "duplicate-event",
+                                "chat_name": "未授权群",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "send_preflight",
+                                "job_id": "reply:duplicate-1",
+                                "event_id": "duplicate-event",
+                                "status": "blocked",
+                                "failures": ["current_chat_mismatch"],
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--log-jsonl",
+                    str(log_path),
+                    "--group-targets-json",
+                    str(targets_path),
+                    "--min-duration-seconds",
+                    "0",
+                    "--min-heartbeat-count",
+                    "1",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+        report = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["status"], "rejected")
+        self.assertEqual(report["duplicate_send_plan_event_ids"], ["duplicate-event"])
+        self.assertEqual(report["unknown_send_plan_chats"], ["未授权群"])
+        self.assertIn("duplicate_send_plan_event_id", report["failures"])
+        self.assertIn("unknown_send_plan_chat", report["failures"])
+        self.assertIn("send_plan_without_ready_preflight", report["failures"])
+
     def test_send_preflight_allows_safe_draft_when_desktop_snapshot_matches(self) -> None:
         plan = self._send_plan(mode="draft")
         snapshot = WeComDesktopSnapshot(

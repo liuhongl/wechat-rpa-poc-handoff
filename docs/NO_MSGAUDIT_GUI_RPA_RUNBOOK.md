@@ -277,6 +277,29 @@ tests/fixtures/multi_group_targets.json
 [x] failures=[]
 ```
 
+试运行验收报告：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_trial_report_poc.py \
+  --log-jsonl data/no_msgaudit_desktop_agent/desktop_scan_log.jsonl \
+  --group-targets-json tests/fixtures/multi_group_targets.json \
+  --min-duration-seconds 3600 \
+  --min-heartbeat-count 1800
+```
+
+验收报告重点检查：
+
+```text
+[x] 心跳数量达到预期
+[x] 日志覆盖时长达到预期
+[x] event/send_plan/snapshot 的群名都在白名单内
+[x] 同一 event_id 没有重复生成 send_plan
+[x] 每个 send_plan 都有 ready_to_draft / needs_operator_confirm / ready_to_send preflight
+[x] failures=[]
+```
+
+如果只是做短时间 POC，可以把 `--min-duration-seconds` 和 `--min-heartbeat-count` 调小；如果是 24 小时验收，必须按真实运行间隔重新计算阈值。
+
 通过标准：
 
 ```text

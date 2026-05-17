@@ -663,6 +663,27 @@ preflight_status_counts
 failures
 ```
 
+试运行验收报告：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_trial_report_poc.py \
+  --log-jsonl data/no_msgaudit_desktop_agent/desktop_scan_log.jsonl \
+  --group-targets-json tests/fixtures/multi_group_targets.json \
+  --min-duration-seconds 3600 \
+  --min-heartbeat-count 1800
+```
+
+验收报告会把 scan JSONL 转成可判定结果：
+
+```text
+duration_seconds / heartbeat_count
+duplicate_event_ids
+duplicate_send_plan_event_ids
+unknown_event_chats / unknown_send_plan_chats / unknown_snapshot_chats
+send_plans_without_ready_preflight
+failures
+```
+
 2026-05-17 本机用真实企业微信当前快照验证：
 
 ```text
@@ -675,6 +696,7 @@ failures
 [x] 扫描器运行中即可看到 `desktop_scan_log.jsonl` 最新心跳
 [x] 使用 snapshot cursor 后，扫描器重启不会重放同一份旧快照
 [x] 健康检查脚本可以汇总 scan JSONL，并在心跳过期时返回非 0
+[x] 试运行验收脚本可以拒绝重复 send_plan、未知群和缺少 ready preflight 的日志
 ```
 
 因此现阶段事实判断更新为：
@@ -688,6 +710,7 @@ Swift AX 当前可见消息区可以做候选事件提取，但不能替代完�
 扫描器输出已经支持逐行落盘，便于异常恢复和运行中观测
 snapshot cursor 可以降低扫描器重启后的重复消费风险
 scan health summary 可以作为后续告警和 24 小时试运行验收入口
+trial report 可以作为 1 小时/24 小时试运行后的验收判定入口
 AppleScript/System Events 不能稳定读到真实企业微信 UI tree
 ```
 
