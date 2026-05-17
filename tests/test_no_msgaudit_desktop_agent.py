@@ -1125,6 +1125,87 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
             self.assertEqual(written_path.read_text(encoding="utf-8"), "83 文本栏 (settable, string) 汽车贷款小助手\n")
             self.assertTrue(written_path.name.startswith("wecom-20260517T100000"))
 
+    def test_no_msgaudit_cleanup_snapshots_poc_dry_run_reports_oldest_candidates(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_cleanup_snapshots_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_dir = Path(tmpdir) / "snapshots"
+            snapshot_dir.mkdir()
+            for name in [
+                "wecom-live-20260518T100000-001.txt",
+                "wecom-live-20260518T100002-002.txt",
+                "wecom-live-20260518T100004-003.txt",
+                "wecom-live-20260518T100006-004.txt",
+                "wecom-live-20260518T100008-005.txt",
+            ]:
+                (snapshot_dir / name).write_text(name + "\n", encoding="utf-8")
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--snapshot-dir",
+                    str(snapshot_dir),
+                    "--max-count",
+                    "2",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            summary = json.loads(result.stdout)
+            candidate_paths_exist = all(Path(path).exists() for path in summary["candidate_paths"])
+
+        self.assertFalse(summary["deleted"])
+        self.assertEqual(summary["snapshot_count"], 5)
+        self.assertEqual(summary["retained_count"], 2)
+        self.assertEqual(summary["candidate_count"], 3)
+        self.assertTrue(candidate_paths_exist)
+        self.assertTrue(summary["candidate_paths"][0].endswith("wecom-live-20260518T100000-001.txt"))
+
+    def test_no_msgaudit_cleanup_snapshots_poc_deletes_only_oldest_candidates_when_enabled(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_cleanup_snapshots_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_dir = Path(tmpdir) / "snapshots"
+            snapshot_dir.mkdir()
+            paths = []
+            for name in [
+                "wecom-live-20260518T100000-001.txt",
+                "wecom-live-20260518T100002-002.txt",
+                "wecom-live-20260518T100004-003.txt",
+                "wecom-live-20260518T100006-004.txt",
+            ]:
+                path = snapshot_dir / name
+                path.write_text(name + "\n", encoding="utf-8")
+                paths.append(path)
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--snapshot-dir",
+                    str(snapshot_dir),
+                    "--max-count",
+                    "2",
+                    "--delete",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            summary = json.loads(result.stdout)
+            remaining_names = sorted(path.name for path in snapshot_dir.glob("*.txt"))
+
+        self.assertTrue(summary["deleted"])
+        self.assertEqual(summary["candidate_count"], 2)
+        self.assertEqual(summary["deleted_count"], 2)
+        self.assertEqual(remaining_names, [paths[2].name, paths[3].name])
+
     def test_no_msgaudit_scan_health_poc_summarizes_recent_scan_log(self) -> None:
         root = Path(__file__).resolve().parent.parent
         script = root / "scripts" / "no_msgaudit_scan_health_poc.py"

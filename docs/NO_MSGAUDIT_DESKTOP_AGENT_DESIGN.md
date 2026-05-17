@@ -596,6 +596,16 @@ wecom-live-20260517T233159-001.txt
 wecom-live-20260517T233159-002.txt
 ```
 
+长期试运行时，快照目录用于复盘漏抓和误抓，不应该在异常尚未分析前直接删除。当前提供保留工具：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_cleanup_snapshots_poc.py \
+  --snapshot-dir data/no_msgaudit_desktop_agent/accessibility_snapshots \
+  --max-count 2000
+```
+
+该工具默认 dry-run；只有显式增加 `--delete` 才会删除按文件名排序后最旧的候选快照。
+
 2026-05-17 本机实测结果：
 
 ```text

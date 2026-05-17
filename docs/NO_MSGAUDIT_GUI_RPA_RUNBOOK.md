@@ -413,6 +413,31 @@ summary.json
 capture_stdout.jsonl / scan_stdout.jsonl / send_queue_stdout.jsonl / event_recall_stdout.json
 ```
 
+长期试运行会持续生成 AX 快照。清理前先 dry-run 看候选文件：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_cleanup_snapshots_poc.py \
+  --snapshot-dir data/no_msgaudit_desktop_agent/trials/manual-001/accessibility_snapshots \
+  --max-count 2000
+```
+
+确认候选无误后才真正删除：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_cleanup_snapshots_poc.py \
+  --snapshot-dir data/no_msgaudit_desktop_agent/trials/manual-001/accessibility_snapshots \
+  --max-count 2000 \
+  --delete
+```
+
+快照清理规则：
+
+```text
+[!] 默认 dry-run，不删除文件
+[!] 只保留按文件名排序最新的 --max-count 个 .txt 快照
+[!] 异常排查期建议先保留完整快照，确认无异常后再执行 --delete
+```
+
 注意：
 
 ```text
