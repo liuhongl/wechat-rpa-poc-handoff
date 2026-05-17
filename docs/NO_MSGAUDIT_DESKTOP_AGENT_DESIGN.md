@@ -645,6 +645,24 @@ wecom-live-20260517T233159-002.txt
 [x] 每条输出会立即追加到 `--out` JSONL，进程异常退出时仍保留已产生证据
 ```
 
+检查扫描日志健康状态：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_scan_health_poc.py \
+  --log-jsonl data/no_msgaudit_desktop_agent/desktop_scan_log.jsonl \
+  --max-heartbeat-age-seconds 60
+```
+
+健康检查会输出：
+
+```text
+ok/status
+last_heartbeat_age_seconds
+event_count / send_plan_count
+preflight_status_counts
+failures
+```
+
 2026-05-17 本机用真实企业微信当前快照验证：
 
 ```text
@@ -656,6 +674,7 @@ wecom-live-20260517T233159-002.txt
 [x] follow 模式可以在目录为空时先 idle，之后消费迟到的新快照
 [x] 扫描器运行中即可看到 `desktop_scan_log.jsonl` 最新心跳
 [x] 使用 snapshot cursor 后，扫描器重启不会重放同一份旧快照
+[x] 健康检查脚本可以汇总 scan JSONL，并在心跳过期时返回非 0
 ```
 
 因此现阶段事实判断更新为：
@@ -668,6 +687,7 @@ Swift AX 当前可见消息区可以做候选事件提取，但不能替代完�
 扫描器 follow 模式可以作为 snapshot spool consumer 的最小形态
 扫描器输出已经支持逐行落盘，便于异常恢复和运行中观测
 snapshot cursor 可以降低扫描器重启后的重复消费风险
+scan health summary 可以作为后续告警和 24 小时试运行验收入口
 AppleScript/System Events 不能稳定读到真实企业微信 UI tree
 ```
 

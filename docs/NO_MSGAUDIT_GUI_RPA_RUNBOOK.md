@@ -261,6 +261,22 @@ tests/fixtures/multi_group_targets.json
 [!] snapshot cursor 只表示“快照已消费”，不表示“客户消息已回复”
 ```
 
+扫描日志健康检查：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_scan_health_poc.py \
+  --log-jsonl data/no_msgaudit_desktop_agent/desktop_scan_log.jsonl \
+  --max-heartbeat-age-seconds 60
+```
+
+通过标准：
+
+```text
+[x] ok=true
+[x] last_heartbeat_age_seconds 未超过阈值
+[x] failures=[]
+```
+
 通过标准：
 
 ```text

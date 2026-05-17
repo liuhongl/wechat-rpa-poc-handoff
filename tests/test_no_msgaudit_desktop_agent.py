@@ -1005,6 +1005,126 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
             self.assertEqual(written_path.read_text(encoding="utf-8"), "83 文本栏 (settable, string) 汽车贷款小助手\n")
             self.assertTrue(written_path.name.startswith("wecom-20260517T100000"))
 
+    def test_no_msgaudit_scan_health_poc_summarizes_recent_scan_log(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_scan_health_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "desktop_scan_log.jsonl"
+            log_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "wecom_event",
+                                "event_id": "ax:汽车贷款小助手:sky:需要经营证明吗 @刘红利",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "send_plan",
+                                "job_id": "reply:ax:汽车贷款小助手:sky:需要经营证明吗 @刘红利",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "send_preflight",
+                                "status": "ready_to_draft",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "scan_heartbeat",
+                                "iteration": 1,
+                                "captured_at": "2026-05-18T10:00:00+08:00",
+                                "snapshot_ref": "/tmp/wecom/001.txt",
+                                "send_plan_count": 1,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--log-jsonl",
+                    str(log_path),
+                    "--now",
+                    "2026-05-18T10:00:05+08:00",
+                    "--max-heartbeat-age-seconds",
+                    "10",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+        summary = json.loads(result.stdout)
+
+        self.assertTrue(summary["ok"])
+        self.assertEqual(summary["status"], "ok")
+        self.assertEqual(summary["total_rows"], 4)
+        self.assertEqual(summary["heartbeat_count"], 1)
+        self.assertEqual(summary["last_heartbeat_age_seconds"], 5)
+        self.assertEqual(summary["latest_snapshot_ref"], "/tmp/wecom/001.txt")
+        self.assertEqual(summary["event_count"], 1)
+        self.assertEqual(summary["send_plan_count"], 1)
+        self.assertEqual(summary["preflight_status_counts"], {"ready_to_draft": 1})
+        self.assertEqual(summary["failures"], [])
+
+    def test_no_msgaudit_scan_health_poc_fails_on_stale_heartbeat(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_scan_health_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "desktop_scan_log.jsonl"
+            log_path.write_text(
+                json.dumps(
+                    {
+                        "type": "scan_heartbeat",
+                        "iteration": 1,
+                        "captured_at": "2026-05-18T10:00:00+08:00",
+                        "snapshot_ref": "",
+                        "send_plan_count": 0,
+                        "status": "idle",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--log-jsonl",
+                    str(log_path),
+                    "--now",
+                    "2026-05-18T10:02:00+08:00",
+                    "--max-heartbeat-age-seconds",
+                    "30",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+        summary = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(summary["ok"])
+        self.assertEqual(summary["status"], "failed")
+        self.assertEqual(summary["last_heartbeat_age_seconds"], 120)
+        self.assertIn("stale_heartbeat", summary["failures"])
+
     def test_send_preflight_allows_safe_draft_when_desktop_snapshot_matches(self) -> None:
         plan = self._send_plan(mode="draft")
         snapshot = WeComDesktopSnapshot(
