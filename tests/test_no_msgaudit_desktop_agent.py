@@ -1447,6 +1447,174 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertIn("unknown_send_plan_chat", report["failures"])
         self.assertIn("send_plan_without_ready_preflight", report["failures"])
 
+    def test_no_msgaudit_event_recall_report_poc_accepts_all_expected_events_captured(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_event_recall_report_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            expected_path = tmp_path / "expected_events.jsonl"
+            scan_log_path = tmp_path / "desktop_scan_log.jsonl"
+            expected_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "expected_event",
+                                "expected_id": "manual-001",
+                                "chat_name": "汽车贷款小助手",
+                                "sender_name": "sky",
+                                "content_contains": "需要经营证明吗",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "expected_event",
+                                "expected_id": "manual-002",
+                                "chat_name": "汽车金融VIP群",
+                                "sender_name": "kay",
+                                "content_contains": "贷款利率",
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            scan_log_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "wecom_event",
+                                "event_id": "ax:汽车贷款小助手:sky:需要经营证明吗 @刘红利#1",
+                                "chat_name": "汽车贷款小助手",
+                                "sender_name": "sky",
+                                "content": "需要经营证明吗 @刘红利",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "wecom_event",
+                                "event_id": "ax:汽车金融VIP群:kay:贷款利率是多少 @刘红利#1",
+                                "chat_name": "汽车金融VIP群",
+                                "sender_name": "kay",
+                                "content": "贷款利率是多少 @刘红利",
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--expected-events-jsonl",
+                    str(expected_path),
+                    "--scan-log-jsonl",
+                    str(scan_log_path),
+                    "--min-capture-rate",
+                    "1.0",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+        report = json.loads(result.stdout)
+
+        self.assertTrue(report["ok"])
+        self.assertEqual(report["status"], "accepted")
+        self.assertEqual(report["expected_event_count"], 2)
+        self.assertEqual(report["captured_expected_count"], 2)
+        self.assertEqual(report["missing_expected_count"], 0)
+        self.assertEqual(report["capture_rate"], 1.0)
+        self.assertEqual(report["missing_expected_events"], [])
+
+    def test_no_msgaudit_event_recall_report_poc_fails_when_expected_event_missing(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_event_recall_report_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            expected_path = tmp_path / "expected_events.jsonl"
+            scan_log_path = tmp_path / "desktop_scan_log.jsonl"
+            expected_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "expected_event",
+                                "expected_id": "manual-001",
+                                "chat_name": "汽车贷款小助手",
+                                "sender_name": "sky",
+                                "content_contains": "需要经营证明吗",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "expected_event",
+                                "expected_id": "manual-002",
+                                "chat_name": "汽车金融VIP群",
+                                "sender_name": "kay",
+                                "content_contains": "贷款利率",
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            scan_log_path.write_text(
+                json.dumps(
+                    {
+                        "type": "wecom_event",
+                        "event_id": "ax:汽车贷款小助手:sky:需要经营证明吗 @刘红利#1",
+                        "chat_name": "汽车贷款小助手",
+                        "sender_name": "sky",
+                        "content": "需要经营证明吗 @刘红利",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--expected-events-jsonl",
+                    str(expected_path),
+                    "--scan-log-jsonl",
+                    str(scan_log_path),
+                    "--min-capture-rate",
+                    "1.0",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+        report = json.loads(result.stdout)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["status"], "rejected")
+        self.assertEqual(report["expected_event_count"], 2)
+        self.assertEqual(report["captured_expected_count"], 1)
+        self.assertEqual(report["missing_expected_count"], 1)
+        self.assertEqual(report["capture_rate"], 0.5)
+        self.assertEqual(report["missing_expected_events"][0]["expected_id"], "manual-002")
+
     def test_no_msgaudit_desktop_trial_runner_poc_creates_evidence_bundle(self) -> None:
         root = Path(__file__).resolve().parent.parent
         script = root / "scripts" / "no_msgaudit_desktop_trial_runner_poc.py"
@@ -1456,6 +1624,7 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
             trial_dir = tmp_path / "trial"
             source_path = tmp_path / "source_ax.txt"
             targets_path = tmp_path / "targets.json"
+            expected_path = tmp_path / "expected_events.jsonl"
             targets_path.write_text(
                 json.dumps(
                     [
@@ -1490,6 +1659,20 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            expected_path.write_text(
+                json.dumps(
+                    {
+                        "type": "expected_event",
+                        "expected_id": "manual-001",
+                        "chat_name": "汽车贷款小助手",
+                        "sender_name": "sky",
+                        "content_contains": "需要经营证明吗",
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
 
             result = subprocess.run(
                 [
@@ -1501,6 +1684,8 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
                     "刘红利",
                     "--group-targets-json",
                     str(targets_path),
+                    "--expected-events-jsonl",
+                    str(expected_path),
                     "--capture-source-text-file",
                     str(source_path),
                     "--capture-iterations",
@@ -1526,6 +1711,7 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
             summary = json.loads(result.stdout)
             health_report = json.loads((trial_dir / "health_report.json").read_text(encoding="utf-8"))
             trial_report = json.loads((trial_dir / "trial_report.json").read_text(encoding="utf-8"))
+            recall_report = json.loads((trial_dir / "event_recall_report.json").read_text(encoding="utf-8"))
             send_queue_rows = [
                 json.loads(line)
                 for line in (trial_dir / "send_queue.jsonl").read_text(encoding="utf-8").splitlines()
@@ -1543,12 +1729,16 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual(summary["scan_returncode"], 0)
         self.assertEqual(summary["queue_returncode"], 0)
         self.assertTrue(summary["queue_ok"])
+        self.assertEqual(summary["recall_returncode"], 0)
+        self.assertTrue(summary["recall_ok"])
         self.assertTrue(summary["health_ok"])
         self.assertTrue(summary["trial_ok"])
         self.assertTrue(snapshot_dir_exists)
         self.assertTrue(scan_log_exists)
         self.assertTrue(health_report["ok"])
         self.assertTrue(trial_report["ok"])
+        self.assertTrue(recall_report["ok"])
+        self.assertEqual(recall_report["capture_rate"], 1.0)
         self.assertEqual(trial_report["send_plan_count"], 1)
         self.assertTrue(any(row["type"] == "wecom_event" for row in scan_rows))
         self.assertTrue(any(row["type"] == "send_queue_item" for row in send_queue_rows))

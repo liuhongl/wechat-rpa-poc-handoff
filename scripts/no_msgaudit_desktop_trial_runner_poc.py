@@ -120,6 +120,19 @@ def _send_queue_command(args: argparse.Namespace, *, scan_log: Path, send_queue:
     return command
 
 
+def _event_recall_command(args: argparse.Namespace, *, scan_log: Path) -> list[str]:
+    return [
+        sys.executable,
+        str(ROOT_DIR / "scripts" / "no_msgaudit_event_recall_report_poc.py"),
+        "--expected-events-jsonl",
+        str(args.expected_events_jsonl),
+        "--scan-log-jsonl",
+        str(scan_log),
+        "--min-capture-rate",
+        str(args.min_capture_rate),
+    ]
+
+
 def _trial_report_command(args: argparse.Namespace, *, scan_log: Path) -> list[str]:
     return [
         sys.executable,
@@ -149,6 +162,8 @@ def main() -> None:
     )
     parser.add_argument("--capture-method", choices=["swift-ax", "applescript"], default="swift-ax")
     parser.add_argument("--capture-source-text-file", type=Path, default=None)
+    parser.add_argument("--expected-events-jsonl", type=Path, default=None)
+    parser.add_argument("--min-capture-rate", type=float, default=1.0)
     parser.add_argument("--capture-iterations", type=int, default=31)
     parser.add_argument("--capture-interval-seconds", type=float, default=2.0)
     parser.add_argument("--snapshot-prefix", default="wecom-live")
@@ -170,6 +185,8 @@ def main() -> None:
         parser.error("--scan-interval-seconds must be >= 0")
     if args.health_max_heartbeat_age_seconds < 0:
         parser.error("--health-max-heartbeat-age-seconds must be >= 0")
+    if args.min_capture_rate < 0 or args.min_capture_rate > 1:
+        parser.error("--min-capture-rate must be between 0 and 1")
     if args.min_duration_seconds < 0:
         parser.error("--min-duration-seconds must be >= 0")
     if args.min_heartbeat_count < 1:
@@ -180,6 +197,7 @@ def main() -> None:
     cursor_file = trial_dir / "snapshot_cursor.json"
     scan_log = trial_dir / "desktop_scan_log.jsonl"
     send_queue = trial_dir / "send_queue.jsonl"
+    event_recall_report_path = trial_dir / "event_recall_report.json"
     health_report_path = trial_dir / "health_report.json"
     trial_report_path = trial_dir / "trial_report.json"
     trial_dir.mkdir(parents=True, exist_ok=True)
@@ -211,6 +229,17 @@ def main() -> None:
         )
         queue_report = _parse_json_stdout(queue_result.stdout)
 
+    recall_result = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="not_requested")
+    recall_report: dict[str, Any] = {"type": "event_recall_report", "ok": True, "status": "not_requested"}
+    if scan_result.returncode == 0 and args.expected_events_jsonl:
+        recall_result = _run_command(
+            _event_recall_command(args, scan_log=scan_log),
+            stdout_path=trial_dir / "event_recall_stdout.json",
+            stderr_path=trial_dir / "event_recall_stderr.txt",
+        )
+        recall_report = _parse_json_stdout(recall_result.stdout)
+    _write_json(event_recall_report_path, recall_report)
+
     health_result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="scan_failed")
     health_report: dict[str, Any] = {}
     if scan_result.returncode == 0:
@@ -239,9 +268,11 @@ def main() -> None:
             capture_result.returncode == 0
             and scan_result.returncode == 0
             and queue_result.returncode == 0
+            and recall_result.returncode == 0
             and health_result.returncode == 0
             and trial_result.returncode == 0
             and queue_report.get("type") == "send_queue_summary"
+            and bool(recall_report.get("ok"))
             and bool(health_report.get("ok"))
             and bool(trial_report.get("ok"))
         ),
@@ -249,14 +280,17 @@ def main() -> None:
         "snapshot_dir": str(snapshot_dir),
         "scan_log": str(scan_log),
         "send_queue": str(send_queue),
+        "event_recall_report": str(event_recall_report_path),
         "health_report": str(health_report_path),
         "trial_report": str(trial_report_path),
         "capture_returncode": capture_result.returncode,
         "scan_returncode": scan_result.returncode,
         "queue_returncode": queue_result.returncode,
+        "recall_returncode": recall_result.returncode,
         "health_returncode": health_result.returncode,
         "trial_returncode": trial_result.returncode,
         "queue_ok": queue_result.returncode == 0 and queue_report.get("type") == "send_queue_summary",
+        "recall_ok": bool(recall_report.get("ok")),
         "health_ok": bool(health_report.get("ok")),
         "trial_ok": bool(trial_report.get("ok")),
     }

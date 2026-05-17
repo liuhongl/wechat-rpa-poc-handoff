@@ -343,6 +343,30 @@ confirmed_sent
 
 如果只是做短时间 POC，可以把 `--min-duration-seconds` 和 `--min-heartbeat-count` 调小；如果是 24 小时验收，必须按真实运行间隔重新计算阈值。
 
+漏抓率对账需要准备人工预期事件清单：
+
+```json
+{"type": "expected_event", "expected_id": "manual-001", "chat_name": "汽车贷款小助手", "sender_name": "sky", "content_contains": "需要经营证明吗"}
+```
+
+对账命令：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_event_recall_report_poc.py \
+  --expected-events-jsonl data/no_msgaudit_desktop_agent/trials/manual-001/expected_events.jsonl \
+  --scan-log-jsonl data/no_msgaudit_desktop_agent/trials/manual-001/desktop_scan_log.jsonl \
+  --min-capture-rate 1.0
+```
+
+通过标准：
+
+```text
+[x] expected_event_count 等于本次人工发出的 @ 数量
+[x] captured_expected_count 等于被 scanner 捕捉到的预期 @ 数量
+[x] missing_expected_count=0
+[x] capture_rate 达到本次验收阈值
+```
+
 也可以用 trial runner 一次性生成证据包：
 
 ```bash
@@ -350,6 +374,7 @@ confirmed_sent
   --trial-dir data/no_msgaudit_desktop_agent/trials/manual-001 \
   --assistant-name "刘红利" \
   --group-targets-json tests/fixtures/multi_group_targets.json \
+  --expected-events-jsonl data/no_msgaudit_desktop_agent/trials/manual-001/expected_events.jsonl \
   --capture-iterations 31 \
   --capture-interval-seconds 2 \
   --scan-iterations 31 \
@@ -364,10 +389,11 @@ runner 会生成：
 accessibility_snapshots/
 desktop_scan_log.jsonl
 send_queue.jsonl
+event_recall_report.json
 health_report.json
 trial_report.json
 summary.json
-capture_stdout.jsonl / scan_stdout.jsonl / send_queue_stdout.jsonl
+capture_stdout.jsonl / scan_stdout.jsonl / send_queue_stdout.jsonl / event_recall_stdout.json
 ```
 
 注意：
@@ -375,6 +401,7 @@ capture_stdout.jsonl / scan_stdout.jsonl / send_queue_stdout.jsonl
 ```text
 [!] 当前 runner 用于把采集、扫描、健康检查和验收报告收敛成证据包
 [!] send_queue 解决的是“同一群逐条处理”，不是消息源可靠性
+[!] event_recall_report 只能基于人工记录的 expected_events 评估漏抓率；人工记录不完整时结论不完整
 [!] 它仍然不证明“多个群完整实时监听”已经成立
 [!] 真正的生产级多群无人值守还需要继续验证企业微信 UI 是否稳定暴露所有目标群 @ 事件
 ```

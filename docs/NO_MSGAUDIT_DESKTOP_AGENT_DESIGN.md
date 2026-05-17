@@ -693,6 +693,23 @@ confirmed_sent
 
 这让同群下一条 send_plan 可以在下一轮队列构建时晋升为 `ready_to_preflight`。
 
+漏抓率对账：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_event_recall_report_poc.py \
+  --expected-events-jsonl data/no_msgaudit_desktop_agent/trials/manual-001/expected_events.jsonl \
+  --scan-log-jsonl data/no_msgaudit_desktop_agent/trials/manual-001/desktop_scan_log.jsonl \
+  --min-capture-rate 1.0
+```
+
+expected events 由人工或外部记录提供：
+
+```json
+{"type": "expected_event", "expected_id": "manual-001", "chat_name": "汽车贷款小助手", "sender_name": "sky", "content_contains": "需要经营证明吗"}
+```
+
+输出会给出 `expected_event_count`、`captured_expected_count`、`missing_expected_count` 和 `capture_rate`。
+
 试运行验收报告：
 
 ```bash
@@ -721,6 +738,7 @@ failures
   --trial-dir data/no_msgaudit_desktop_agent/trials/manual-001 \
   --assistant-name "刘红利" \
   --group-targets-json tests/fixtures/multi_group_targets.json \
+  --expected-events-jsonl data/no_msgaudit_desktop_agent/trials/manual-001/expected_events.jsonl \
   --capture-iterations 31 \
   --capture-interval-seconds 2 \
   --scan-iterations 31 \
@@ -735,6 +753,7 @@ runner 输出：
 summary.json
 health_report.json
 trial_report.json
+event_recall_report.json
 desktop_scan_log.jsonl
 send_queue.jsonl
 accessibility_snapshots/
