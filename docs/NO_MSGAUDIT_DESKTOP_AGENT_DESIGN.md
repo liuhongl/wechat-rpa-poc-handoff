@@ -560,11 +560,17 @@ pbpaste | .venv/bin/python scripts/no_msgaudit_write_snapshot_poc.py \
 
 这仍然是本地 POC。`pbpaste` 只是示例输入，真实生产化应替换成稳定的 Computer Use/OCR/系统辅助功能采集器。
 
-当前也提供了一个 macOS AppleScript/System Events 采集器 POC：
+当前也提供了一个 macOS 采集器 POC，支持两种方式：
+
+```text
+swift-ax：使用 Swift + macOS Accessibility API
+applescript：使用 AppleScript/System Events
+```
 
 ```bash
 .venv/bin/python scripts/no_msgaudit_capture_wecom_snapshot_poc.py \
   --app-name "企业微信" \
+  --capture-method swift-ax \
   --snapshot-dir data/no_msgaudit_desktop_agent/accessibility_snapshots \
   --prefix wecom-live
 ```
@@ -572,18 +578,23 @@ pbpaste | .venv/bin/python scripts/no_msgaudit_write_snapshot_poc.py \
 2026-05-17 本机实测结果：
 
 ```text
+[x] Swift AX 成功采集真实企业微信 UI tree，写出约 12KB 快照
+[x] Swift AX 快照可以被 no_msgaudit_desktop_scan_poc.py 解析
+[x] 当前群识别为 汽车金融VIP群
+[x] 汽车金融VIP群 send_preflight=ready_to_draft，其他群 blocked
 [!] AppleScript/System Events 可以访问企业微信进程，但没有读到可用 UI tree
 [!] 输出错误：no accessible UI tree from WeCom desktop
 ```
 
-因此这个脚本目前只能作为“失败可观测”的采集尝试，不能作为生产采集器。现阶段事实判断仍是：
+因此现阶段事实判断更新为：
 
 ```text
 Computer Use 可以读到真实企业微信 accessibility tree
+Swift AX 可以读到真实企业微信 accessibility tree，并可接入 snapshot 目录
 AppleScript/System Events 不能稳定读到真实企业微信 UI tree
 ```
 
-下一步真实采集器应优先走 Computer Use/OCR，而不是继续强化 AppleScript。
+下一步真实采集器应优先围绕 Swift AX 或 Computer Use/OCR 做连续运行验证，而不是继续强化 AppleScript。
 
 ### P2：半自动闭环
 

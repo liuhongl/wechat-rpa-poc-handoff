@@ -239,6 +239,40 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertTrue(snapshot.window_visible)
         self.assertEqual(snapshot.raw_snapshot_ref, "computer-use:企业微信")
 
+    def test_builds_desktop_snapshot_from_swift_ax_accessibility_tree_text(self) -> None:
+        targets = [
+            GroupReplyTarget(roomid="wr_auto_loan_group", chat_name="汽车贷款小助手"),
+            GroupReplyTarget(roomid="wr_vip_group", chat_name="汽车金融VIP群"),
+        ]
+        snapshot = build_desktop_snapshot_from_accessibility_tree_text(
+            """
+            AXApplication 企业微信
+              AXWindow 企业微信
+                AXSplitGroup
+                  AXScrollArea
+                    AXTable
+                      AXRow (selected)
+                        AXCell (selected)
+                          AXImage
+                          AXStaticText 汽车金融VIP群
+                          AXStaticText 邀请的小飞侠加入外部群聊失败
+                          AXTextArea 外部
+                  AXTextField 汽车金融VIP群
+                  AXStaticText 由企业微信用户创建的外部群，含1位外部联系人 | 群主: 刘红利
+                  AXTextArea
+            """,
+            group_targets=targets,
+            captured_at="2026-05-17T10:00:00+08:00",
+            raw_snapshot_ref="swift-ax:企业微信",
+        )
+
+        self.assertEqual(snapshot.current_chat_name, "汽车金融VIP群")
+        self.assertEqual(snapshot.selected_chat_name, "汽车金融VIP群")
+        self.assertEqual(snapshot.input_text, "")
+        self.assertTrue(snapshot.app_online)
+        self.assertTrue(snapshot.window_visible)
+        self.assertEqual(snapshot.raw_snapshot_ref, "swift-ax:企业微信")
+
     def test_no_msgaudit_desktop_agent_poc_can_build_preflight_from_snapshot_text_file(self) -> None:
         root = Path(__file__).resolve().parent.parent
         script = root / "scripts" / "no_msgaudit_desktop_agent_poc.py"

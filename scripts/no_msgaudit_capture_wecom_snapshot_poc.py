@@ -5,6 +5,7 @@ import json
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -46,6 +47,112 @@ def _run_osascript(script: str) -> str:
     return result.stdout
 
 
+def _swift_ax_probe_source() -> str:
+    return r'''
+import AppKit
+import ApplicationServices
+import Foundation
+
+let target = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "企业微信"
+let runningApps = NSWorkspace.shared.runningApplications.filter { app in
+    app.localizedName == target || app.bundleIdentifier == target
+}
+
+guard let app = runningApps.first else {
+    fputs("target app not running: \(target)\n", stderr)
+    exit(2)
+}
+
+if !AXIsProcessTrusted() {
+    fputs("AX permission denied for current process\n", stderr)
+    exit(3)
+}
+
+let appElement = AXUIElementCreateApplication(app.processIdentifier)
+var printed = 0
+let maxLines = 5000
+
+func attributeString(_ element: AXUIElement, _ attribute: String) -> String {
+    var value: CFTypeRef?
+    let error = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+    if error != .success || value == nil {
+        return ""
+    }
+    if let text = value as? String {
+        return text
+    }
+    if let number = value as? NSNumber {
+        return number.stringValue
+    }
+    return String(describing: value!)
+}
+
+func childrenOf(_ element: AXUIElement) -> [AXUIElement] {
+    var value: CFTypeRef?
+    let childError = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
+    if childError == .success, let children = value as? [AXUIElement] {
+        return children
+    }
+    let windowError = AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &value)
+    if windowError == .success, let windows = value as? [AXUIElement] {
+        return windows
+    }
+    return []
+}
+
+func dumpElement(_ element: AXUIElement, depth: Int) {
+    if printed >= maxLines || depth > 12 {
+        return
+    }
+
+    let role = attributeString(element, kAXRoleAttribute)
+    let title = attributeString(element, kAXTitleAttribute)
+    let description = attributeString(element, kAXDescriptionAttribute)
+    let value = attributeString(element, kAXValueAttribute)
+    let selected = attributeString(element, kAXSelectedAttribute)
+
+    var parts: [String] = []
+    if !role.isEmpty { parts.append(role) }
+    if selected == "1" || selected.lowercased() == "true" { parts.append("(selected)") }
+    if !title.isEmpty { parts.append(title) }
+    if !description.isEmpty && description != title { parts.append(description) }
+    if !value.isEmpty && value != title && value != description { parts.append(value) }
+
+    if !parts.isEmpty {
+        print(String(repeating: "  ", count: depth) + parts.joined(separator: " "))
+        printed += 1
+    }
+
+    for child in childrenOf(element) {
+        dumpElement(child, depth: depth + 1)
+    }
+}
+
+dumpElement(appElement, depth: 0)
+'''
+
+
+def _run_swift_ax_probe(app_name: str) -> str:
+    if sys.platform != "darwin":
+        raise SystemExit("Swift AX snapshot probe currently supports macOS only")
+    with tempfile.NamedTemporaryFile("w", suffix=".swift", encoding="utf-8", delete=False) as file:
+        file.write(_swift_ax_probe_source())
+        script_path = Path(file.name)
+    try:
+        result = subprocess.run(
+            ["swift", str(script_path), app_name],
+            text=True,
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        details = (exc.stderr or exc.stdout or str(exc)).strip()
+        raise SystemExit(f"swift AX probe failed: {details}") from exc
+    finally:
+        script_path.unlink(missing_ok=True)
+    return result.stdout
+
+
 def _build_accessibility_tree_script(app_name: str) -> str:
     return f"""
 set targetApp to {applescript_quote(app_name)}
@@ -77,8 +184,14 @@ end tell
 """
 
 
-def _read_wecom_accessibility_tree(app_name: str) -> str:
-    tree_text = _run_osascript(_build_accessibility_tree_script(app_name))
+def _read_wecom_accessibility_tree(app_name: str, *, capture_method: str = "applescript") -> str:
+    if capture_method == "applescript":
+        tree_text = _run_osascript(_build_accessibility_tree_script(app_name))
+    elif capture_method == "swift-ax":
+        tree_text = _run_swift_ax_probe(app_name)
+    else:
+        raise SystemExit(f"unknown capture method: {capture_method}")
+
     if not tree_text.strip():
         raise SystemExit(
             "no accessible UI tree from WeCom desktop; System Events could access the app "
@@ -112,6 +225,7 @@ def main() -> None:
         description="POC: capture WeCom accessibility text and write it into the no-message-audit snapshot spool."
     )
     parser.add_argument("--app-name", default="企业微信")
+    parser.add_argument("--capture-method", choices=["swift-ax", "applescript"], default="swift-ax")
     parser.add_argument("--source-text-file", type=Path, default=None)
     parser.add_argument(
         "--snapshot-dir",
@@ -127,8 +241,8 @@ def main() -> None:
         content = args.source_text_file.read_text(encoding="utf-8")
         source = "source_text_file"
     else:
-        content = _read_wecom_accessibility_tree(args.app_name)
-        source = "osascript_system_events"
+        content = _read_wecom_accessibility_tree(args.app_name, capture_method=args.capture_method)
+        source = args.capture_method
 
     payload = _write_snapshot(
         snapshot_dir=args.snapshot_dir,

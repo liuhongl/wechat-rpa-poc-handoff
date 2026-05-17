@@ -339,7 +339,7 @@ def _parse_bool(value: str) -> bool:
 def _find_current_chat_name_from_accessibility_tree(text: str, target_names: list[str]) -> str:
     for raw_line in text.splitlines():
         line = raw_line.strip()
-        if "文本栏 (settable, string)" not in line:
+        if "文本栏 (settable, string)" not in line and not line.startswith("AXTextField"):
             continue
         for target_name in target_names:
             if target_name in line:
@@ -350,7 +350,7 @@ def _find_current_chat_name_from_accessibility_tree(text: str, target_names: lis
 def _find_selected_chat_name_from_accessibility_tree(text: str, target_names: list[str]) -> str:
     lines = text.splitlines()
     for index, raw_line in enumerate(lines):
-        if "row (selected)" not in raw_line:
+        if "row (selected)" not in raw_line and "AXRow (selected)" not in raw_line:
             continue
         block = "\n".join(lines[index : index + 12])
         for target_name in target_names:
@@ -366,10 +366,15 @@ def _find_composer_input_text_from_accessibility_tree(text: str) -> str:
         line = raw_line.strip()
         if line.startswith("The focused UI element"):
             continue
-        if marker not in line:
+        if marker not in line and not line.startswith("AXTextArea"):
             continue
-        _, value = line.split(marker, 1)
-        values.append(value.strip())
+        if marker in line:
+            _, value = line.split(marker, 1)
+            values.append(value.strip())
+        elif line == "AXTextArea":
+            values.append("")
+        else:
+            values.append(line.removeprefix("AXTextArea").strip())
     if not values:
         return ""
     return values[-1]

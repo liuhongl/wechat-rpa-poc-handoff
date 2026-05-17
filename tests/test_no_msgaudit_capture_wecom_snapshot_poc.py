@@ -27,9 +27,36 @@ class NoMsgAuditCaptureWeComSnapshotPocTests(unittest.TestCase):
     def test_read_wecom_accessibility_tree_rejects_empty_output(self) -> None:
         with patch.object(capture_poc, "_run_osascript", return_value="\n"):
             with self.assertRaises(SystemExit) as raised:
-                capture_poc._read_wecom_accessibility_tree("企业微信")
+                capture_poc._read_wecom_accessibility_tree("企业微信", capture_method="applescript")
 
         self.assertIn("no accessible UI tree", str(raised.exception))
+
+    def test_run_swift_ax_probe_surfaces_stderr(self) -> None:
+        error = subprocess.CalledProcessError(
+            1,
+            ["swift", "probe.swift", "企业微信"],
+            stderr="AX permission denied",
+        )
+
+        with patch.object(capture_poc.sys, "platform", "darwin"):
+            with patch.object(capture_poc.subprocess, "run", side_effect=error):
+                with self.assertRaises(SystemExit) as raised:
+                    capture_poc._run_swift_ax_probe("企业微信")
+
+        self.assertIn("AX permission denied", str(raised.exception))
+
+    def test_read_wecom_accessibility_tree_rejects_empty_swift_output(self) -> None:
+        with patch.object(capture_poc, "_run_swift_ax_probe", return_value="\n"):
+            with self.assertRaises(SystemExit) as raised:
+                capture_poc._read_wecom_accessibility_tree("企业微信", capture_method="swift-ax")
+
+        self.assertIn("no accessible UI tree", str(raised.exception))
+
+    def test_read_wecom_accessibility_tree_rejects_unknown_method(self) -> None:
+        with self.assertRaises(SystemExit) as raised:
+            capture_poc._read_wecom_accessibility_tree("企业微信", capture_method="unknown")
+
+        self.assertIn("unknown capture method", str(raised.exception))
 
     def test_capture_script_writes_source_text_file_to_snapshot_dir(self) -> None:
         root = Path(__file__).resolve().parent.parent
