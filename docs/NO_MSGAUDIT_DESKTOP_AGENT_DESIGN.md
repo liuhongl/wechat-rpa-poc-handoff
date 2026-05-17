@@ -449,7 +449,8 @@ send_plan
 
 ```text
 [x] 定义发送前校验模型
-[ ] 连续扫描会话列表，发现多个群的 [有人@我]
+[x] 用快照文件模拟连续扫描并输出 heartbeat/preflight 日志
+[ ] 从真实企业微信连续扫描会话列表，发现多个群的 [有人@我]
 [ ] 打开目标群后读取最近上下文
 [x] 从真实企业微信初步采集顶部群名、左侧选中会话、输入框内容
 [x] 用桌面快照校验顶部群名和左侧选中会话
@@ -513,6 +514,29 @@ status=blocked 表示必须停止，不能写入或发送
 ```
 
 注意：这仍然只是“单次 UI 树可解析”，不是“连续监听稳定”。后续还必须验证窗口切换、滚动、锁屏、网络波动、企业微信 UI 更新后的稳定性。
+
+当前已新增连续扫描 dry-run 脚本：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_desktop_scan_poc.py \
+  --assistant-name "刘红利" \
+  --ignore-state \
+  --desktop-accessibility-tree-text-file /tmp/wecom_accessibility_tree_1.txt \
+  --desktop-accessibility-tree-text-file /tmp/wecom_accessibility_tree_2.txt \
+  --iterations 2 \
+  --interval-seconds 0 \
+  --out /tmp/no_msgaudit_desktop_scan_log.jsonl
+```
+
+输出包含：
+
+```text
+scan_heartbeat
+desktop_snapshot
+send_preflight
+```
+
+这一步验证的是“多轮快照 -> 多轮安全判断 -> JSONL 日志”的运行框架。它还没有自动从企业微信实时抓取 UI 树，后续需要把 Computer Use/OCR/其它桌面采集器接入为真实 snapshot source。
 
 ### P2：半自动闭环
 

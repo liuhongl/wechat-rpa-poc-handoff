@@ -314,6 +314,78 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertIn('"expected_chat_name": "汽车金融VIP群"', result.stdout)
         self.assertIn('"status": "ready_to_draft"', result.stdout)
 
+    def test_no_msgaudit_desktop_scan_poc_outputs_heartbeat_snapshot_and_preflight_rows(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_scan_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            loan_tree = tmp_path / "loan_tree.txt"
+            vip_tree = tmp_path / "vip_tree.txt"
+            out_path = tmp_path / "scan.jsonl"
+            loan_tree.write_text(
+                "\n".join(
+                    [
+                        "22 row (selected)",
+                        "  25 text 汽车贷款小助手 是否需要经营证明取决于具体产品和客户身份。",
+                        "83 文本栏 (settable, string) 汽车贷款小助手",
+                        "112 文本输入区 (settable, string)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            vip_tree.write_text(
+                "\n".join(
+                    [
+                        "22 row (selected)",
+                        "  25 text 汽车金融VIP群 邀请微信的小飞侠加入外部群聊失败",
+                        "83 文本栏 (settable, string) 汽车金融VIP群",
+                        "112 文本输入区 (settable, string)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--desktop-accessibility-tree-text-file",
+                    str(loan_tree),
+                    "--desktop-accessibility-tree-text-file",
+                    str(vip_tree),
+                    "--iterations",
+                    "2",
+                    "--interval-seconds",
+                    "0",
+                    "--out",
+                    str(out_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()]
+
+        row_types = [row["type"] for row in rows]
+        heartbeat_rows = [row for row in rows if row["type"] == "scan_heartbeat"]
+        snapshot_rows = [row for row in rows if row["type"] == "desktop_snapshot"]
+        preflight_rows = [row for row in rows if row["type"] == "send_preflight"]
+
+        self.assertIn('"type": "scan_heartbeat"', result.stdout)
+        self.assertEqual(row_types.count("scan_heartbeat"), 2)
+        self.assertEqual(len(heartbeat_rows), 2)
+        self.assertEqual(len(snapshot_rows), 2)
+        self.assertEqual(len(preflight_rows), 4)
+        self.assertEqual(snapshot_rows[0]["current_chat_name"], "汽车贷款小助手")
+        self.assertEqual(snapshot_rows[1]["current_chat_name"], "汽车金融VIP群")
+        self.assertTrue(any(row["status"] == "ready_to_draft" for row in preflight_rows))
+        self.assertTrue(any(row["status"] == "blocked" for row in preflight_rows))
+
     def test_send_preflight_allows_safe_draft_when_desktop_snapshot_matches(self) -> None:
         plan = self._send_plan(mode="draft")
         snapshot = WeComDesktopSnapshot(
