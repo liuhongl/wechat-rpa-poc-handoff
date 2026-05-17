@@ -27,6 +27,7 @@ from app.no_msgaudit_desktop_agent import (
     WeComDesktopSnapshot,
     build_desktop_snapshot_from_accessibility_tree_text,
     build_desktop_snapshot_from_ui_text,
+    build_wecom_events_from_accessibility_tree_text,
     build_wecom_events_from_ui_snapshot,
     preflight_report_to_dict,
     reply_job_to_send_plan,
@@ -129,6 +130,17 @@ def _accessibility_tree_path_from_dir(directory: Path, *, iteration: int) -> Pat
     return paths[index]
 
 
+def _accessibility_tree_path_for_iteration(args: argparse.Namespace, *, iteration: int) -> Path:
+    if args.desktop_accessibility_tree_dir:
+        return _accessibility_tree_path_from_dir(
+            args.desktop_accessibility_tree_dir,
+            iteration=iteration,
+        )
+    if args.desktop_accessibility_tree_text_file:
+        return args.desktop_accessibility_tree_text_file[iteration % len(args.desktop_accessibility_tree_text_file)]
+    raise SystemExit("--events-from-accessibility-tree requires an accessibility tree snapshot source")
+
+
 def _load_snapshot_for_iteration(
     args: argparse.Namespace,
     *,
@@ -177,6 +189,54 @@ def _load_snapshot_for_iteration(
     )
 
 
+def _build_jobs_and_send_plans(
+    events: list[Any],
+    *,
+    targets: list[GroupReplyTarget],
+    assistant_names: list[str],
+    processed: set[str],
+    roomid_by_chat_name: dict[str, str],
+    app_name: str,
+    human_userid: str,
+    assistant_sender_ids: list[str],
+) -> tuple[list[Any], list[Any]]:
+    records = [
+        wecom_event_to_plain_text_record(
+            event,
+            roomid_by_chat_name=roomid_by_chat_name,
+        )
+        for event in events
+    ]
+    jobs = plan_multi_group_reply_jobs(
+        records,
+        group_targets=targets,
+        assistant_names=assistant_names,
+        processed_keys=processed,
+        app_name=app_name,
+        human_userid=human_userid,
+        assistant_sender_ids=assistant_sender_ids,
+    )
+    send_plans = [reply_job_to_send_plan(job) for job in jobs]
+    return jobs, send_plans
+
+
+def _append_event_job_plan_rows(
+    rows: list[dict[str, Any]],
+    *,
+    events: list[Any],
+    jobs: list[Any],
+    send_plans: list[Any],
+    iteration: int | None = None,
+) -> None:
+    iteration_payload = {"iteration": iteration} if iteration is not None else {}
+    for event in events:
+        rows.append({"type": "wecom_event", **iteration_payload, **wecom_event_to_dict(event)})
+    for job in jobs:
+        rows.append({"type": "reply_job", **iteration_payload, **reply_job_to_dict(job)})
+    for plan in send_plans:
+        rows.append({"type": "send_plan", **iteration_payload, **send_plan_to_dict(plan)})
+
+
 def main() -> None:
     load_dotenv()
 
@@ -207,6 +267,7 @@ def main() -> None:
     parser.add_argument("--desktop-snapshot-text-file", type=Path, action="append", default=[])
     parser.add_argument("--desktop-accessibility-tree-text-file", type=Path, action="append", default=[])
     parser.add_argument("--desktop-accessibility-tree-dir", type=Path, default=None)
+    parser.add_argument("--events-from-accessibility-tree", action="store_true")
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--interval-seconds", type=float, default=2.0)
     parser.add_argument(
@@ -227,6 +288,10 @@ def main() -> None:
             "use only one snapshot source kind: JSON files, structured text files, "
             "accessibility tree files, or accessibility tree directory"
         )
+    if args.events_from_accessibility_tree and not (
+        args.desktop_accessibility_tree_text_file or args.desktop_accessibility_tree_dir
+    ):
+        raise SystemExit("--events-from-accessibility-tree requires an accessibility tree snapshot source")
 
     assistant_names = resolve_assistant_names(
         args.assistant_name,
@@ -234,45 +299,67 @@ def main() -> None:
     )
     assistant_name = assistant_names[0]
     targets = _load_group_targets(args.group_targets_json)
-    ui_text = args.ui_text_file.read_text(encoding="utf-8")
     base_detected_at = _now_iso()
-    events = build_wecom_events_from_ui_snapshot(
-        ui_text,
-        group_targets=targets,
-        assistant_name=assistant_name,
-        detected_at=base_detected_at,
-        raw_snapshot_ref=str(args.ui_text_file),
-    )
     roomid_by_chat_name = {target.chat_name: target.roomid for target in targets}
-    records = [
-        wecom_event_to_plain_text_record(
-            event,
-            roomid_by_chat_name=roomid_by_chat_name,
-        )
-        for event in events
-    ]
     processed = set() if args.ignore_state else load_processed_keys(args.state_file)
-    jobs = plan_multi_group_reply_jobs(
-        records,
-        group_targets=targets,
-        assistant_names=assistant_names,
-        processed_keys=processed,
-        app_name=args.app_name,
-        human_userid=args.human_userid,
-        assistant_sender_ids=args.assistant_sender_id,
-    )
-    send_plans = [reply_job_to_send_plan(job) for job in jobs]
 
     rows: list[dict[str, Any]] = []
-    for event in events:
-        rows.append({"type": "wecom_event", **wecom_event_to_dict(event)})
-    for job in jobs:
-        rows.append({"type": "reply_job", **reply_job_to_dict(job)})
-    for plan in send_plans:
-        rows.append({"type": "send_plan", **send_plan_to_dict(plan)})
+    send_plans: list[Any] = []
+    if not args.events_from_accessibility_tree:
+        ui_text = args.ui_text_file.read_text(encoding="utf-8")
+        events = build_wecom_events_from_ui_snapshot(
+            ui_text,
+            group_targets=targets,
+            assistant_name=assistant_name,
+            detected_at=base_detected_at,
+            raw_snapshot_ref=str(args.ui_text_file),
+        )
+        jobs, send_plans = _build_jobs_and_send_plans(
+            events,
+            targets=targets,
+            assistant_names=assistant_names,
+            processed=processed,
+            roomid_by_chat_name=roomid_by_chat_name,
+            app_name=args.app_name,
+            human_userid=args.human_userid,
+            assistant_sender_ids=args.assistant_sender_id,
+        )
+        _append_event_job_plan_rows(
+            rows,
+            events=events,
+            jobs=jobs,
+            send_plans=send_plans,
+        )
 
     for iteration in range(args.iterations):
         captured_at = _now_iso()
+        if args.events_from_accessibility_tree:
+            event_source_path = _accessibility_tree_path_for_iteration(args, iteration=iteration)
+            events = build_wecom_events_from_accessibility_tree_text(
+                event_source_path.read_text(encoding="utf-8"),
+                group_targets=targets,
+                assistant_name=assistant_name,
+                detected_at=captured_at,
+                raw_snapshot_ref=str(event_source_path),
+            )
+            jobs, send_plans = _build_jobs_and_send_plans(
+                events,
+                targets=targets,
+                assistant_names=assistant_names,
+                processed=processed,
+                roomid_by_chat_name=roomid_by_chat_name,
+                app_name=args.app_name,
+                human_userid=args.human_userid,
+                assistant_sender_ids=args.assistant_sender_id,
+            )
+            _append_event_job_plan_rows(
+                rows,
+                events=events,
+                jobs=jobs,
+                send_plans=send_plans,
+                iteration=iteration + 1,
+            )
+
         snapshot = _load_snapshot_for_iteration(
             args,
             targets=targets,

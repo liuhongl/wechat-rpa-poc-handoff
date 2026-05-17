@@ -223,6 +223,27 @@ tests/fixtures/multi_group_targets.json
 
 这一步只证明 GUI 层能捕捉到当前可见快照，不证明能监听全部历史消息。
 
+如果使用 Swift AX 快照目录验证当前可见消息区事件提取：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_desktop_scan_poc.py \
+  --assistant-name "刘红利" \
+  --ignore-state \
+  --desktop-accessibility-tree-dir data/no_msgaudit_desktop_agent/accessibility_snapshots \
+  --events-from-accessibility-tree \
+  --iterations 1 \
+  --interval-seconds 0 \
+  --out data/no_msgaudit_desktop_agent/desktop_scan_log.jsonl
+```
+
+通过标准：
+
+```text
+[x] 有客户 @刘红利 且消息在当前可见消息区时，输出 wecom_event/reply_job/send_plan
+[x] 当前可见消息区没有客户 @刘红利 时，send_plan_count=0
+[x] 不把群名、成员列表、系统消息误判成客户问题
+```
+
 通过标准：
 
 ```text

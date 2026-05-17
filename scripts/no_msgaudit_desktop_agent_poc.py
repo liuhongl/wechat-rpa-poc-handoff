@@ -27,6 +27,7 @@ from app.no_msgaudit_desktop_agent import (
     WeComDesktopSnapshot,
     build_desktop_snapshot_from_accessibility_tree_text,
     build_desktop_snapshot_from_ui_text,
+    build_wecom_events_from_accessibility_tree_text,
     build_wecom_events_from_ui_snapshot,
     preflight_report_to_dict,
     reply_job_to_send_plan,
@@ -109,6 +110,12 @@ def main() -> None:
     parser.add_argument("--detected-at", default="")
     parser.add_argument("--raw-snapshot-ref", default="")
     parser.add_argument(
+        "--events-accessibility-tree-text-file",
+        type=Path,
+        default=None,
+        help="Optional accessibility tree text file used as the event source instead of the GUI list snapshot.",
+    )
+    parser.add_argument(
         "--desktop-snapshot-json",
         type=Path,
         default=None,
@@ -146,16 +153,25 @@ def main() -> None:
     )
     assistant_name = assistant_names[0]
     targets = _load_group_targets(args.group_targets_json)
-    ui_text = args.ui_text_file.read_text(encoding="utf-8")
     detected_at = args.detected_at or _now_iso()
 
-    events = build_wecom_events_from_ui_snapshot(
-        ui_text,
-        group_targets=targets,
-        assistant_name=assistant_name,
-        detected_at=detected_at,
-        raw_snapshot_ref=args.raw_snapshot_ref or str(args.ui_text_file),
-    )
+    if args.events_accessibility_tree_text_file:
+        events = build_wecom_events_from_accessibility_tree_text(
+            args.events_accessibility_tree_text_file.read_text(encoding="utf-8"),
+            group_targets=targets,
+            assistant_name=assistant_name,
+            detected_at=detected_at,
+            raw_snapshot_ref=args.raw_snapshot_ref or str(args.events_accessibility_tree_text_file),
+        )
+    else:
+        ui_text = args.ui_text_file.read_text(encoding="utf-8")
+        events = build_wecom_events_from_ui_snapshot(
+            ui_text,
+            group_targets=targets,
+            assistant_name=assistant_name,
+            detected_at=detected_at,
+            raw_snapshot_ref=args.raw_snapshot_ref or str(args.ui_text_file),
+        )
     roomid_by_chat_name = {target.chat_name: target.roomid for target in targets}
     records = [
         wecom_event_to_plain_text_record(

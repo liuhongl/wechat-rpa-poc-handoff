@@ -455,6 +455,7 @@ send_plan
 [x] 从真实企业微信初步采集顶部群名、左侧选中会话、输入框内容
 [x] 用桌面快照校验顶部群名和左侧选中会话
 [x] 用 Swift AX 连续采集真实企业微信 UI tree 快照
+[x] 从 Swift AX 当前群消息区提取候选 WeComEvent
 [ ] 只写草稿，不发送
 ```
 
@@ -611,9 +612,31 @@ wecom-live-20260517T233159-002.txt
 
 ```text
 [!] 当前扫描器使用真实 Swift AX 快照做桌面状态和发送前校验
-[!] 当前 reply event 仍来自模拟 GUI 快照输入，不是来自真实 Swift AX 消息流
 [!] 真实 Swift AX 快照能看到当前群名、成员列表、部分可见消息文本
-[!] 但当前还没有稳定解析出“消息发送者 + @触发 + 消息内容”的完整 WeComEvent
+[!] 当前已支持从 Swift AX 当前群消息区提取“发送者 + @触发 + 消息内容”的候选 WeComEvent
+[!] 这仍然不是完整消息流监听，只能覆盖当前客户端可见的消息区
+```
+
+使用真实 AX 快照作为事件源：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_desktop_scan_poc.py \
+  --assistant-name "刘红利" \
+  --ignore-state \
+  --desktop-accessibility-tree-dir data/no_msgaudit_desktop_agent/accessibility_snapshots \
+  --events-from-accessibility-tree \
+  --iterations 1 \
+  --interval-seconds 0 \
+  --out data/no_msgaudit_desktop_agent/desktop_scan_log.jsonl
+```
+
+2026-05-17 本机用真实企业微信当前快照验证：
+
+```text
+[x] 当前群识别为 汽车金融VIP群
+[x] 当前输入框为空
+[x] 当前快照未发现满足“客户发送者 + @刘红利”的候选事件
+[x] send_plan_count=0，没有误把群名、成员名或系统消息当作客户问题
 ```
 
 因此现阶段事实判断更新为：
@@ -622,6 +645,7 @@ wecom-live-20260517T233159-002.txt
 Computer Use 可以读到真实企业微信 accessibility tree
 Swift AX 可以读到真实企业微信 accessibility tree，并可接入 snapshot 目录
 Swift AX 连续采集可以支撑当前群校验和发送前 preflight
+Swift AX 当前可见消息区可以做候选事件提取，但不能替代完整消息流
 AppleScript/System Events 不能稳定读到真实企业微信 UI tree
 ```
 

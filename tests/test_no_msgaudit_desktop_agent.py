@@ -11,6 +11,7 @@ from app.no_msgaudit_desktop_agent import (
     WeComEvent,
     build_desktop_snapshot_from_accessibility_tree_text,
     build_desktop_snapshot_from_ui_text,
+    build_wecom_events_from_accessibility_tree_text,
     build_wecom_events_from_ui_snapshot,
     preflight_report_to_dict,
     reply_job_to_send_plan,
@@ -273,6 +274,46 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertTrue(snapshot.window_visible)
         self.assertEqual(snapshot.raw_snapshot_ref, "swift-ax:企业微信")
 
+    def test_builds_wecom_events_from_swift_ax_current_chat_message_rows(self) -> None:
+        targets = [
+            GroupReplyTarget(roomid="wr_vip_group", chat_name="汽车金融VIP群"),
+        ]
+
+        events = build_wecom_events_from_accessibility_tree_text(
+            """
+            AXApplication 企业微信
+              AXWindow 企业微信
+                AXTextField 汽车金融VIP群
+                AXStaticText 由企业微信用户创建的外部群，含1位外部联系人 | 群主: 刘红利
+                AXScrollArea
+                  AXTable
+                    AXRow
+                      AXCell
+                        AXStaticText 16:48
+                        AXStaticText sky
+                        AXTextArea 需要经营证明吗 @刘红利
+                    AXRow
+                      AXCell
+                        AXStaticText 刘红利
+                        AXTextArea 是否需要经营证明取决于具体产品和客户身份。
+            """,
+            group_targets=targets,
+            assistant_name="刘红利",
+            detected_at="2026-05-17T10:00:00+08:00",
+            raw_snapshot_ref="swift-ax:企业微信",
+        )
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].event_id, "ax:汽车金融VIP群:sky:需要经营证明吗 @刘红利")
+        self.assertEqual(events[0].source, "desktop_accessibility_tree")
+        self.assertEqual(events[0].chat_name, "汽车金融VIP群")
+        self.assertEqual(events[0].sender_name, "sky")
+        self.assertEqual(events[0].content, "需要经营证明吗 @刘红利")
+        self.assertEqual(events[0].assistant_name, "刘红利")
+        self.assertEqual(events[0].detected_at, "2026-05-17T10:00:00+08:00")
+        self.assertEqual(events[0].confidence, 0.85)
+        self.assertEqual(events[0].raw_snapshot_ref, "swift-ax:企业微信")
+
     def test_no_msgaudit_desktop_agent_poc_can_build_preflight_from_snapshot_text_file(self) -> None:
         root = Path(__file__).resolve().parent.parent
         script = root / "scripts" / "no_msgaudit_desktop_agent_poc.py"
@@ -347,6 +388,58 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertIn('"type": "send_preflight"', result.stdout)
         self.assertIn('"expected_chat_name": "汽车金融VIP群"', result.stdout)
         self.assertIn('"status": "ready_to_draft"', result.stdout)
+
+    def test_no_msgaudit_desktop_agent_poc_can_build_events_from_accessibility_tree_text_file(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_agent_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "accessibility_tree.txt"
+            out_path = Path(tmpdir) / "plan.jsonl"
+            snapshot_path.write_text(
+                "\n".join(
+                    [
+                        "AXApplication 企业微信",
+                        "  AXWindow 企业微信",
+                        "    AXRow (selected)",
+                        "      AXCell (selected)",
+                        "        AXStaticText 汽车贷款小助手",
+                        "    AXTextField 汽车贷款小助手",
+                        "    AXScrollArea",
+                        "      AXTable",
+                        "        AXRow",
+                        "          AXCell",
+                        "            AXStaticText 16:48",
+                        "            AXStaticText sky",
+                        "            AXTextArea 需要经营证明吗 @刘红利",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--events-accessibility-tree-text-file",
+                    str(snapshot_path),
+                    "--out",
+                    str(out_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()]
+
+        self.assertIn('"source": "desktop_accessibility_tree"', result.stdout)
+        self.assertTrue(any(row["type"] == "wecom_event" for row in rows))
+        self.assertTrue(any(row["type"] == "reply_job" for row in rows))
+        self.assertTrue(any(row["type"] == "send_plan" for row in rows))
 
     def test_no_msgaudit_desktop_scan_poc_outputs_heartbeat_snapshot_and_preflight_rows(self) -> None:
         root = Path(__file__).resolve().parent.parent
@@ -482,6 +575,74 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertTrue(snapshot_rows[1]["raw_snapshot_ref"].endswith("002-vip.txt"))
         self.assertEqual(snapshot_rows[0]["current_chat_name"], "汽车贷款小助手")
         self.assertEqual(snapshot_rows[1]["current_chat_name"], "汽车金融VIP群")
+
+    def test_no_msgaudit_desktop_scan_poc_can_build_events_from_accessibility_tree_directory(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_scan_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            snapshot_dir = tmp_path / "snapshots"
+            snapshot_dir.mkdir()
+            out_path = tmp_path / "scan.jsonl"
+            (snapshot_dir / "001-loan.txt").write_text(
+                "\n".join(
+                    [
+                        "AXApplication 企业微信",
+                        "  AXWindow 企业微信",
+                        "    AXRow (selected)",
+                        "      AXCell (selected)",
+                        "        AXStaticText 汽车贷款小助手",
+                        "    AXTextField 汽车贷款小助手",
+                        "    AXScrollArea",
+                        "      AXTable",
+                        "        AXRow",
+                        "          AXCell",
+                        "            AXStaticText 16:48",
+                        "            AXStaticText sky",
+                        "            AXTextArea 需要经营证明吗 @刘红利",
+                        "    AXTextArea",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--desktop-accessibility-tree-dir",
+                    str(snapshot_dir),
+                    "--events-from-accessibility-tree",
+                    "--iterations",
+                    "1",
+                    "--interval-seconds",
+                    "0",
+                    "--out",
+                    str(out_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()]
+
+        event_rows = [row for row in rows if row["type"] == "wecom_event"]
+        job_rows = [row for row in rows if row["type"] == "reply_job"]
+        plan_rows = [row for row in rows if row["type"] == "send_plan"]
+        preflight_rows = [row for row in rows if row["type"] == "send_preflight"]
+
+        self.assertEqual(len(event_rows), 1)
+        self.assertEqual(event_rows[0]["source"], "desktop_accessibility_tree")
+        self.assertEqual(event_rows[0]["chat_name"], "汽车贷款小助手")
+        self.assertEqual(event_rows[0]["sender_name"], "sky")
+        self.assertEqual(len(job_rows), 1)
+        self.assertEqual(len(plan_rows), 1)
+        self.assertEqual(preflight_rows[0]["status"], "ready_to_draft")
 
     def test_no_msgaudit_write_snapshot_poc_writes_stdin_to_timestamped_file(self) -> None:
         root = Path(__file__).resolve().parent.parent

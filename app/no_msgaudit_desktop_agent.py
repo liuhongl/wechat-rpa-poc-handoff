@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -99,6 +100,64 @@ def build_wecom_events_from_ui_snapshot(
                     assistant_name=assistant_name,
                     detected_at=detected_at,
                     confidence=1.0,
+                    raw_snapshot_ref=raw_snapshot_ref,
+                )
+            )
+
+    return events
+
+
+def build_wecom_events_from_accessibility_tree_text(
+    tree_text: str,
+    *,
+    group_targets: Iterable[GroupReplyTarget],
+    assistant_name: str,
+    detected_at: str,
+    raw_snapshot_ref: str = "",
+    source: str = "desktop_accessibility_tree",
+) -> list[WeComEvent]:
+    targets = [
+        target
+        for target in group_targets
+        if target.enabled and target.roomid.strip() and target.chat_name.strip()
+    ]
+    target_names = [target.chat_name for target in targets]
+    current_chat_name = _find_current_chat_name_from_accessibility_tree(tree_text, target_names)
+    target = next((item for item in targets if item.chat_name == current_chat_name), None)
+    if target is None:
+        return []
+
+    events: list[WeComEvent] = []
+    seen_event_ids: set[str] = set()
+    for block in _iter_accessibility_row_blocks(tree_text):
+        content_items = _message_contents_from_accessibility_block(block)
+        if not content_items:
+            continue
+        sender_name = _sender_from_accessibility_message_block(
+            block,
+            current_chat_name=current_chat_name,
+            assistant_name=assistant_name,
+        )
+        if not sender_name or sender_name == assistant_name:
+            continue
+
+        for content in content_items:
+            if not _content_mentions_assistant(content, assistant_name):
+                continue
+            event_id = f"ax:{current_chat_name}:{sender_name}:{content}"
+            if event_id in seen_event_ids:
+                continue
+            seen_event_ids.add(event_id)
+            events.append(
+                WeComEvent(
+                    event_id=event_id,
+                    source=source,
+                    chat_name=current_chat_name,
+                    sender_name=sender_name,
+                    content=content,
+                    assistant_name=assistant_name,
+                    detected_at=detected_at,
+                    confidence=0.85,
                     raw_snapshot_ref=raw_snapshot_ref,
                 )
             )
@@ -378,3 +437,73 @@ def _find_composer_input_text_from_accessibility_tree(text: str) -> str:
     if not values:
         return ""
     return values[-1]
+
+
+def _iter_accessibility_row_blocks(text: str) -> list[list[str]]:
+    blocks: list[list[str]] = []
+    current: list[str] = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        is_row = line.startswith("AXRow") or re.match(r"^\d+\s+row\b", line) is not None
+        if is_row:
+            if current:
+                blocks.append(current)
+            current = [raw_line]
+            continue
+        if current:
+            current.append(raw_line)
+    if current:
+        blocks.append(current)
+    return blocks
+
+
+def _message_contents_from_accessibility_block(block: list[str]) -> list[str]:
+    contents: list[str] = []
+    for raw_line in block:
+        line = raw_line.strip()
+        if line == "AXTextArea":
+            continue
+        if line.startswith("AXTextArea "):
+            content = line.removeprefix("AXTextArea").strip()
+            if content:
+                contents.append(content)
+    return contents
+
+
+def _sender_from_accessibility_message_block(
+    block: list[str],
+    *,
+    current_chat_name: str,
+    assistant_name: str,
+) -> str:
+    candidates: list[str] = []
+    for raw_line in block:
+        line = raw_line.strip()
+        if not line.startswith("AXStaticText "):
+            continue
+        value = line.removeprefix("AXStaticText").strip()
+        if _is_sender_candidate(value, current_chat_name=current_chat_name):
+            candidates.append(value)
+    if not candidates:
+        return ""
+    if assistant_name in candidates:
+        return assistant_name
+    return candidates[-1]
+
+
+def _is_sender_candidate(value: str, *, current_chat_name: str) -> bool:
+    if not value or value == current_chat_name:
+        return False
+    if re.match(r"^(\d{1,2}:\d{2}|昨天\s+\d{1,2}:\d{2}|星期[一二三四五六日天])$", value):
+        return False
+    if value.startswith("群成员") or value in {"微信联系人", "@微信"}:
+        return False
+    if value.startswith("由企业微信用户创建"):
+        return False
+    return True
+
+
+def _content_mentions_assistant(content: str, assistant_name: str) -> bool:
+    normalized_content = content.replace("\u2005", " ").strip()
+    normalized_name = assistant_name.strip()
+    return bool(normalized_name and f"@{normalized_name}" in normalized_content)
