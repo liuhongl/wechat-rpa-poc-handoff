@@ -423,9 +423,27 @@ Reply Orchestrator / Agent Runtime
 
 ```text
 [x] 明确不依赖会话存档的方案边界
-[ ] 定义 WeComEvent / SendPlan 等核心结构
-[ ] 把现有 GUI snapshot POC 对齐到这些结构
+[x] 定义 WeComEvent / SendPlan 等核心结构
+[x] 把现有 GUI snapshot POC 对齐到这些结构
 ```
+
+当前 P0 dry-run 命令：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_desktop_agent_poc.py \
+  --assistant-name "刘红利" \
+  --ignore-state
+```
+
+这条命令只读取样例 GUI 快照并输出标准链路：
+
+```text
+wecom_event
+reply_job
+send_plan
+```
+
+默认 send plan 是 `draft` 模式，`send=false`，不会打开企业微信，也不会发送真实消息。
 
 ### P1：真实桌面 I/O 验证
 
@@ -492,10 +510,10 @@ WeCom Desktop Adapter POC
 具体目标：
 
 ```text
-1. 把真实企业微信 UI 快照抽象成 WeComEvent
-2. 把现有 reply job 转成 SendPlan
-3. 加入发送前校验模型
-4. 跑一个只写草稿的 1 小时守护进程验证
+1. 加入发送前校验模型
+2. 跑一个只写草稿的 1 小时守护进程验证
+3. 验证真实企业微信 UI 快照能否持续抽象成 WeComEvent
+4. 验证异常时能停止并记录证据
 ```
 
 如果 1 小时守护进程能稳定，再扩展到 24 小时；如果 24 小时仍稳定，再评估 OpenClaw/QClaw 是否值得引入。
