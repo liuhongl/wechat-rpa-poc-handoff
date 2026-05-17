@@ -1,0 +1,79 @@
+import json
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import scripts.no_msgaudit_capture_wecom_snapshot_poc as capture_poc
+
+
+class NoMsgAuditCaptureWeComSnapshotPocTests(unittest.TestCase):
+    def test_run_osascript_surfaces_stderr(self) -> None:
+        error = subprocess.CalledProcessError(
+            1,
+            ["osascript"],
+            stderr="execution error: osascript 不允许辅助访问 (-1719)",
+        )
+
+        with patch.object(capture_poc.sys, "platform", "darwin"):
+            with patch.object(capture_poc.subprocess, "run", side_effect=error):
+                with self.assertRaises(SystemExit) as raised:
+                    capture_poc._run_osascript("bad script")
+
+        self.assertIn("不允许辅助访问", str(raised.exception))
+
+    def test_read_wecom_accessibility_tree_rejects_empty_output(self) -> None:
+        with patch.object(capture_poc, "_run_osascript", return_value="\n"):
+            with self.assertRaises(SystemExit) as raised:
+                capture_poc._read_wecom_accessibility_tree("企业微信")
+
+        self.assertIn("no accessible UI tree", str(raised.exception))
+
+    def test_capture_script_writes_source_text_file_to_snapshot_dir(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_capture_wecom_snapshot_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            source = tmp_path / "source.txt"
+            snapshot_dir = tmp_path / "snapshots"
+            source.write_text(
+                "83 文本栏 (settable, string) 汽车金融VIP群\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--source-text-file",
+                    str(source),
+                    "--snapshot-dir",
+                    str(snapshot_dir),
+                    "--captured-at",
+                    "2026-05-17T10:00:00+08:00",
+                    "--prefix",
+                    "wecom-live",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            payload = json.loads(result.stdout)
+            written_path = Path(payload["path"])
+
+            self.assertTrue(written_path.exists())
+            self.assertTrue(written_path.name.startswith("wecom-live-20260517T100000"))
+            self.assertEqual(
+                written_path.read_text(encoding="utf-8"),
+                "83 文本栏 (settable, string) 汽车金融VIP群\n",
+            )
+            self.assertEqual(payload["source"], "source_text_file")
+            self.assertGreater(payload["bytes"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
