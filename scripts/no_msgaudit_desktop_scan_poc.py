@@ -143,9 +143,43 @@ def _next_unseen_accessibility_tree_path_from_dir(directory: Path, consumed_path
         key=lambda path: path.name,
     )
     for path in paths:
-        if str(path) not in consumed_paths:
+        if _snapshot_cursor_key(path) not in consumed_paths:
             return path
     return None
+
+
+def _snapshot_cursor_key(path: Path) -> str:
+    return str(path.resolve())
+
+
+def _load_consumed_snapshot_paths(path: Path | None) -> set[str]:
+    if path is None or not path.exists():
+        return set()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict):
+        values = payload.get("consumed_snapshot_paths", [])
+    elif isinstance(payload, list):
+        values = payload
+    else:
+        raise ValueError("snapshot cursor must be a JSON object or list")
+    if not isinstance(values, list):
+        raise ValueError("snapshot cursor consumed_snapshot_paths must be a list")
+    return {str(value) for value in values}
+
+
+def _save_consumed_snapshot_paths(path: Path | None, consumed_paths: set[str]) -> None:
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {"consumed_snapshot_paths": sorted(consumed_paths)},
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _accessibility_tree_path_for_iteration(args: argparse.Namespace, *, iteration: int) -> Path:
@@ -323,6 +357,7 @@ def main() -> None:
     parser.add_argument("--desktop-accessibility-tree-dir", type=Path, default=None)
     parser.add_argument("--events-from-accessibility-tree", action="store_true")
     parser.add_argument("--follow-snapshot-dir", action="store_true")
+    parser.add_argument("--snapshot-cursor-file", type=Path, default=None)
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--interval-seconds", type=float, default=2.0)
     parser.add_argument(
@@ -362,7 +397,7 @@ def main() -> None:
     roomid_by_chat_name = {target.chat_name: target.roomid for target in targets}
     processed = set() if args.ignore_state else load_processed_keys(args.state_file)
     seen_event_ids_this_run: set[str] = set()
-    consumed_snapshot_paths_this_run: set[str] = set()
+    consumed_snapshot_paths_this_run = _load_consumed_snapshot_paths(args.snapshot_cursor_file)
 
     rows: list[dict[str, Any]] = []
     _reset_jsonl(args.out)
@@ -419,7 +454,8 @@ def main() -> None:
                 if args.interval_seconds and iteration < args.iterations - 1:
                     time.sleep(args.interval_seconds)
                 continue
-            consumed_snapshot_paths_this_run.add(str(follow_snapshot_path))
+            consumed_snapshot_paths_this_run.add(_snapshot_cursor_key(follow_snapshot_path))
+            _save_consumed_snapshot_paths(args.snapshot_cursor_file, consumed_snapshot_paths_this_run)
 
         if args.events_from_accessibility_tree:
             event_source_path = follow_snapshot_path or _accessibility_tree_path_for_iteration(args, iteration=iteration)

@@ -628,6 +628,7 @@ wecom-live-20260517T233159-002.txt
   --desktop-accessibility-tree-dir data/no_msgaudit_desktop_agent/accessibility_snapshots \
   --follow-snapshot-dir \
   --events-from-accessibility-tree \
+  --snapshot-cursor-file data/no_msgaudit_desktop_agent/snapshot_cursor.json \
   --iterations 10 \
   --interval-seconds 2 \
   --out data/no_msgaudit_desktop_agent/desktop_scan_log.jsonl
@@ -638,6 +639,7 @@ wecom-live-20260517T233159-002.txt
 ```text
 [x] 必须配合 --events-from-accessibility-tree 使用，避免默认样例事件混入真实验证
 [x] 只消费目录里尚未处理过的新快照
+[x] 传入 --snapshot-cursor-file 后，扫描器重启也会跳过已消费快照
 [x] 目录暂时没有新快照时输出 idle heartbeat，不退出
 [x] 不重复用最后一个旧快照做 preflight
 [x] 每条输出会立即追加到 `--out` JSONL，进程异常退出时仍保留已产生证据
@@ -653,6 +655,7 @@ wecom-live-20260517T233159-002.txt
 [x] 同一条候选事件连续出现多轮时，只在本次扫描进程内生成一次 send_plan
 [x] follow 模式可以在目录为空时先 idle，之后消费迟到的新快照
 [x] 扫描器运行中即可看到 `desktop_scan_log.jsonl` 最新心跳
+[x] 使用 snapshot cursor 后，扫描器重启不会重放同一份旧快照
 ```
 
 因此现阶段事实判断更新为：
@@ -664,6 +667,7 @@ Swift AX 连续采集可以支撑当前群校验和发送前 preflight
 Swift AX 当前可见消息区可以做候选事件提取，但不能替代完整消息流
 扫描器 follow 模式可以作为 snapshot spool consumer 的最小形态
 扫描器输出已经支持逐行落盘，便于异常恢复和运行中观测
+snapshot cursor 可以降低扫描器重启后的重复消费风险
 AppleScript/System Events 不能稳定读到真实企业微信 UI tree
 ```
 

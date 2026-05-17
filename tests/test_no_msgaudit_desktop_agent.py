@@ -866,6 +866,70 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual(len(snapshot_rows), 1)
         self.assertTrue(snapshot_rows[0]["raw_snapshot_ref"].endswith("001-loan.txt"))
 
+    def test_no_msgaudit_desktop_scan_poc_follow_dir_persists_snapshot_cursor_across_runs(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_scan_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            snapshot_dir = tmp_path / "snapshots"
+            snapshot_dir.mkdir()
+            cursor_path = tmp_path / "snapshot_cursor.json"
+            first_out_path = tmp_path / "first.jsonl"
+            second_out_path = tmp_path / "second.jsonl"
+            (snapshot_dir / "001-loan.txt").write_text(
+                "\n".join(
+                    [
+                        "22 row (selected)",
+                        "  25 text 汽车贷款小助手 是否需要经营证明取决于具体产品和客户身份。",
+                        "83 文本栏 (settable, string) 汽车贷款小助手",
+                        "112 文本输入区 (settable, string)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            base_command = [
+                sys.executable,
+                str(script),
+                "--assistant-name",
+                "刘红利",
+                "--ignore-state",
+                "--desktop-accessibility-tree-dir",
+                str(snapshot_dir),
+                "--follow-snapshot-dir",
+                "--events-from-accessibility-tree",
+                "--snapshot-cursor-file",
+                str(cursor_path),
+                "--iterations",
+                "1",
+                "--interval-seconds",
+                "0",
+            ]
+            subprocess.run(
+                [*base_command, "--out", str(first_out_path)],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            subprocess.run(
+                [*base_command, "--out", str(second_out_path)],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            first_rows = [json.loads(line) for line in first_out_path.read_text(encoding="utf-8").splitlines()]
+            second_rows = [json.loads(line) for line in second_out_path.read_text(encoding="utf-8").splitlines()]
+            cursor_payload = json.loads(cursor_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(len([row for row in first_rows if row["type"] == "desktop_snapshot"]), 1)
+        self.assertEqual(len([row for row in second_rows if row["type"] == "desktop_snapshot"]), 0)
+        self.assertEqual(second_rows[0]["status"], "idle")
+        self.assertEqual(second_rows[0]["reason"], "no_new_snapshot")
+        self.assertEqual(len(cursor_payload["consumed_snapshot_paths"]), 1)
+        self.assertTrue(cursor_payload["consumed_snapshot_paths"][0].endswith("001-loan.txt"))
+
     def test_no_msgaudit_desktop_scan_poc_streams_rows_to_out_before_exit(self) -> None:
         root = Path(__file__).resolve().parent.parent
         script = root / "scripts" / "no_msgaudit_desktop_scan_poc.py"
