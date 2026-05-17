@@ -684,6 +684,31 @@ send_plans_without_ready_preflight
 failures
 ```
 
+一键生成试运行证据包：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_desktop_trial_runner_poc.py \
+  --trial-dir data/no_msgaudit_desktop_agent/trials/manual-001 \
+  --assistant-name "刘红利" \
+  --group-targets-json tests/fixtures/multi_group_targets.json \
+  --capture-iterations 31 \
+  --capture-interval-seconds 2 \
+  --scan-iterations 31 \
+  --scan-interval-seconds 2 \
+  --min-duration-seconds 60 \
+  --min-heartbeat-count 31
+```
+
+runner 输出：
+
+```text
+summary.json
+health_report.json
+trial_report.json
+desktop_scan_log.jsonl
+accessibility_snapshots/
+```
+
 2026-05-17 本机用真实企业微信当前快照验证：
 
 ```text
@@ -697,6 +722,7 @@ failures
 [x] 使用 snapshot cursor 后，扫描器重启不会重放同一份旧快照
 [x] 健康检查脚本可以汇总 scan JSONL，并在心跳过期时返回非 0
 [x] 试运行验收脚本可以拒绝重复 send_plan、未知群和缺少 ready preflight 的日志
+[x] trial runner 可以用模拟 AX 快照生成完整证据包
 ```
 
 因此现阶段事实判断更新为：
@@ -711,6 +737,7 @@ Swift AX 当前可见消息区可以做候选事件提取，但不能替代完�
 snapshot cursor 可以降低扫描器重启后的重复消费风险
 scan health summary 可以作为后续告警和 24 小时试运行验收入口
 trial report 可以作为 1 小时/24 小时试运行后的验收判定入口
+trial runner 可以降低手工试运行命令出错概率，但不等同于完整消息流监听
 AppleScript/System Events 不能稳定读到真实企业微信 UI tree
 ```
 

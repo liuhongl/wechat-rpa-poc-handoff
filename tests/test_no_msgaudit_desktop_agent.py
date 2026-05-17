@@ -1327,6 +1327,105 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertIn("unknown_send_plan_chat", report["failures"])
         self.assertIn("send_plan_without_ready_preflight", report["failures"])
 
+    def test_no_msgaudit_desktop_trial_runner_poc_creates_evidence_bundle(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_trial_runner_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            trial_dir = tmp_path / "trial"
+            source_path = tmp_path / "source_ax.txt"
+            targets_path = tmp_path / "targets.json"
+            targets_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "roomid": "wr_auto_loan_group",
+                            "chat_name": "汽车贷款小助手",
+                            "enabled": True,
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            source_path.write_text(
+                "\n".join(
+                    [
+                        "AXApplication 企业微信",
+                        "  AXWindow 企业微信",
+                        "    AXRow (selected)",
+                        "      AXCell (selected)",
+                        "        AXStaticText 汽车贷款小助手",
+                        "    AXTextField 汽车贷款小助手",
+                        "    AXScrollArea",
+                        "      AXTable",
+                        "        AXRow",
+                        "          AXCell",
+                        "            AXStaticText 16:48",
+                        "            AXStaticText sky",
+                        "            AXTextArea 需要经营证明吗 @刘红利",
+                        "    AXTextArea",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--trial-dir",
+                    str(trial_dir),
+                    "--assistant-name",
+                    "刘红利",
+                    "--group-targets-json",
+                    str(targets_path),
+                    "--capture-source-text-file",
+                    str(source_path),
+                    "--capture-iterations",
+                    "1",
+                    "--scan-iterations",
+                    "1",
+                    "--capture-interval-seconds",
+                    "0",
+                    "--scan-interval-seconds",
+                    "0",
+                    "--min-duration-seconds",
+                    "0",
+                    "--min-heartbeat-count",
+                    "1",
+                    "--health-max-heartbeat-age-seconds",
+                    "60",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            summary = json.loads(result.stdout)
+            health_report = json.loads((trial_dir / "health_report.json").read_text(encoding="utf-8"))
+            trial_report = json.loads((trial_dir / "trial_report.json").read_text(encoding="utf-8"))
+            scan_rows = [
+                json.loads(line)
+                for line in (trial_dir / "desktop_scan_log.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+            snapshot_dir_exists = Path(summary["snapshot_dir"]).exists()
+            scan_log_exists = Path(summary["scan_log"]).exists()
+
+        self.assertTrue(summary["ok"])
+        self.assertEqual(summary["type"], "desktop_trial_summary")
+        self.assertEqual(summary["capture_returncode"], 0)
+        self.assertEqual(summary["scan_returncode"], 0)
+        self.assertTrue(summary["health_ok"])
+        self.assertTrue(summary["trial_ok"])
+        self.assertTrue(snapshot_dir_exists)
+        self.assertTrue(scan_log_exists)
+        self.assertTrue(health_report["ok"])
+        self.assertTrue(trial_report["ok"])
+        self.assertEqual(trial_report["send_plan_count"], 1)
+        self.assertTrue(any(row["type"] == "wecom_event" for row in scan_rows))
+
     def test_send_preflight_allows_safe_draft_when_desktop_snapshot_matches(self) -> None:
         plan = self._send_plan(mode="draft")
         snapshot = WeComDesktopSnapshot(

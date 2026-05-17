@@ -300,6 +300,40 @@ tests/fixtures/multi_group_targets.json
 
 如果只是做短时间 POC，可以把 `--min-duration-seconds` 和 `--min-heartbeat-count` 调小；如果是 24 小时验收，必须按真实运行间隔重新计算阈值。
 
+也可以用 trial runner 一次性生成证据包：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_desktop_trial_runner_poc.py \
+  --trial-dir data/no_msgaudit_desktop_agent/trials/manual-001 \
+  --assistant-name "刘红利" \
+  --group-targets-json tests/fixtures/multi_group_targets.json \
+  --capture-iterations 31 \
+  --capture-interval-seconds 2 \
+  --scan-iterations 31 \
+  --scan-interval-seconds 2 \
+  --min-duration-seconds 60 \
+  --min-heartbeat-count 31
+```
+
+runner 会生成：
+
+```text
+accessibility_snapshots/
+desktop_scan_log.jsonl
+health_report.json
+trial_report.json
+summary.json
+capture_stdout.jsonl / scan_stdout.jsonl
+```
+
+注意：
+
+```text
+[!] 当前 runner 用于把采集、扫描、健康检查和验收报告收敛成证据包
+[!] 它仍然不证明“多个群完整实时监听”已经成立
+[!] 真正的生产级多群无人值守还需要继续验证企业微信 UI 是否稳定暴露所有目标群 @ 事件
+```
+
 通过标准：
 
 ```text
