@@ -244,7 +244,9 @@ tests/fixtures/multi_group_targets.json
 [x] 当前可见消息区没有客户 @刘红利 时，send_plan_count=0
 [x] 不把群名、成员列表、系统消息误判成客户问题
 [x] 同一条可见消息连续出现多轮时，本次扫描进程内只生成一次计划
+[x] follow 模式必须显式配合 --events-from-accessibility-tree，避免默认样例事件混入真实验证
 [x] follow 模式只消费新快照，目录暂无新快照时输出 idle heartbeat
+[x] 扫描器进程仍在运行时，`--out` JSONL 已经能看到最新输出
 ```
 
 注意：
@@ -253,6 +255,7 @@ tests/fixtures/multi_group_targets.json
 [!] 这是进程内去重，防止同一条可见消息在多轮扫描里重复规划
 [!] 这不是最终发送状态持久化；真实持久去重应在写草稿或发送成功后记录
 [!] follow 模式解决的是 snapshot spool 消费，不等于完整消息流监听
+[!] `--out` 是运行证据日志，不是“消息已成功回复”的业务状态
 ```
 
 通过标准：

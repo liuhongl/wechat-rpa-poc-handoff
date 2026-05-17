@@ -754,6 +754,7 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
                     "--desktop-accessibility-tree-dir",
                     str(snapshot_dir),
                     "--follow-snapshot-dir",
+                    "--events-from-accessibility-tree",
                     "--iterations",
                     "3",
                     "--interval-seconds",
@@ -779,6 +780,36 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual(heartbeat_rows[2]["reason"], "no_new_snapshot")
         self.assertEqual(heartbeat_rows[2]["send_plan_count"], 0)
 
+    def test_no_msgaudit_desktop_scan_poc_follow_dir_requires_accessibility_tree_events(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_scan_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_dir = Path(tmpdir) / "snapshots"
+            snapshot_dir.mkdir()
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--desktop-accessibility-tree-dir",
+                    str(snapshot_dir),
+                    "--follow-snapshot-dir",
+                    "--iterations",
+                    "1",
+                    "--interval-seconds",
+                    "0",
+                ],
+                text=True,
+                capture_output=True,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("--follow-snapshot-dir requires --events-from-accessibility-tree", result.stderr)
+
     def test_no_msgaudit_desktop_scan_poc_follow_dir_waits_for_late_snapshot(self) -> None:
         root = Path(__file__).resolve().parent.parent
         script = root / "scripts" / "no_msgaudit_desktop_scan_poc.py"
@@ -798,6 +829,7 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
                     "--desktop-accessibility-tree-dir",
                     str(snapshot_dir),
                     "--follow-snapshot-dir",
+                    "--events-from-accessibility-tree",
                     "--iterations",
                     "3",
                     "--interval-seconds",
@@ -833,6 +865,50 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual(heartbeat_rows[0]["status"], "idle")
         self.assertEqual(len(snapshot_rows), 1)
         self.assertTrue(snapshot_rows[0]["raw_snapshot_ref"].endswith("001-loan.txt"))
+
+    def test_no_msgaudit_desktop_scan_poc_streams_rows_to_out_before_exit(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_scan_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            snapshot_dir = tmp_path / "snapshots"
+            snapshot_dir.mkdir()
+            out_path = tmp_path / "scan.jsonl"
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--desktop-accessibility-tree-dir",
+                    str(snapshot_dir),
+                    "--follow-snapshot-dir",
+                    "--events-from-accessibility-tree",
+                    "--iterations",
+                    "5",
+                    "--interval-seconds",
+                    "0.3",
+                    "--out",
+                    str(out_path),
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            try:
+                time.sleep(0.1)
+                self.assertIsNone(process.poll(), "scan process exited before proving streaming output")
+                self.assertTrue(out_path.exists(), "scan output file should exist while process is still running")
+                early_text = out_path.read_text(encoding="utf-8")
+                self.assertIn('"type": "scan_heartbeat"', early_text)
+                self.assertIn('"status": "idle"', early_text)
+            finally:
+                stdout, stderr = process.communicate(timeout=5)
+
+            self.assertEqual(process.returncode, 0, stderr)
+            self.assertIn('"status": "idle"', stdout)
 
     def test_no_msgaudit_write_snapshot_poc_writes_stdin_to_timestamped_file(self) -> None:
         root = Path(__file__).resolve().parent.parent

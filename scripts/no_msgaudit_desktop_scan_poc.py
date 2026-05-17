@@ -88,11 +88,18 @@ def _snapshot_to_dict(snapshot: WeComDesktopSnapshot) -> dict[str, Any]:
     }
 
 
-def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+def _reset_jsonl(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as file:
-        for row in rows:
-            file.write(json.dumps(row, ensure_ascii=False) + "\n")
+    path.write_text("", encoding="utf-8")
+
+
+def _record_output_row(rows: list[dict[str, Any]], row: dict[str, Any], *, out_path: Path) -> None:
+    line = json.dumps(row, ensure_ascii=False)
+    rows.append(row)
+    print(line, flush=True)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("a", encoding="utf-8") as file:
+        file.write(line + "\n")
 
 
 def _now_iso() -> str:
@@ -260,15 +267,28 @@ def _append_event_job_plan_rows(
     events: list[Any],
     jobs: list[Any],
     send_plans: list[Any],
+    out_path: Path,
     iteration: int | None = None,
 ) -> None:
     iteration_payload = {"iteration": iteration} if iteration is not None else {}
     for event in events:
-        rows.append({"type": "wecom_event", **iteration_payload, **wecom_event_to_dict(event)})
+        _record_output_row(
+            rows,
+            {"type": "wecom_event", **iteration_payload, **wecom_event_to_dict(event)},
+            out_path=out_path,
+        )
     for job in jobs:
-        rows.append({"type": "reply_job", **iteration_payload, **reply_job_to_dict(job)})
+        _record_output_row(
+            rows,
+            {"type": "reply_job", **iteration_payload, **reply_job_to_dict(job)},
+            out_path=out_path,
+        )
     for plan in send_plans:
-        rows.append({"type": "send_plan", **iteration_payload, **send_plan_to_dict(plan)})
+        _record_output_row(
+            rows,
+            {"type": "send_plan", **iteration_payload, **send_plan_to_dict(plan)},
+            out_path=out_path,
+        )
 
 
 def main() -> None:
@@ -329,6 +349,8 @@ def main() -> None:
         raise SystemExit("--events-from-accessibility-tree requires an accessibility tree snapshot source")
     if args.follow_snapshot_dir and not args.desktop_accessibility_tree_dir:
         raise SystemExit("--follow-snapshot-dir requires --desktop-accessibility-tree-dir")
+    if args.follow_snapshot_dir and not args.events_from_accessibility_tree:
+        raise SystemExit("--follow-snapshot-dir requires --events-from-accessibility-tree")
 
     assistant_names = resolve_assistant_names(
         args.assistant_name,
@@ -343,6 +365,7 @@ def main() -> None:
     consumed_snapshot_paths_this_run: set[str] = set()
 
     rows: list[dict[str, Any]] = []
+    _reset_jsonl(args.out)
     send_plans: list[Any] = []
     if not args.events_from_accessibility_tree:
         ui_text = args.ui_text_file.read_text(encoding="utf-8")
@@ -368,6 +391,7 @@ def main() -> None:
             events=events,
             jobs=jobs,
             send_plans=send_plans,
+            out_path=args.out,
         )
 
     for iteration in range(args.iterations):
@@ -379,7 +403,8 @@ def main() -> None:
                 consumed_snapshot_paths_this_run,
             )
             if follow_snapshot_path is None:
-                rows.append(
+                _record_output_row(
+                    rows,
                     {
                         "type": "scan_heartbeat",
                         "iteration": iteration + 1,
@@ -388,7 +413,8 @@ def main() -> None:
                         "send_plan_count": 0,
                         "status": "idle",
                         "reason": "no_new_snapshot",
-                    }
+                    },
+                    out_path=args.out,
                 )
                 if args.interval_seconds and iteration < args.iterations - 1:
                     time.sleep(args.interval_seconds)
@@ -420,6 +446,7 @@ def main() -> None:
                 events=events,
                 jobs=jobs,
                 send_plans=send_plans,
+                out_path=args.out,
                 iteration=iteration + 1,
             )
             seen_event_ids_this_run.update(job.source_msgid for job in jobs)
@@ -444,28 +471,30 @@ def main() -> None:
             "snapshot_ref": snapshot.raw_snapshot_ref,
             "send_plan_count": len(send_plans),
         }
-        rows.append(heartbeat)
-        rows.append({"type": "desktop_snapshot", "iteration": iteration + 1, **_snapshot_to_dict(snapshot)})
+        _record_output_row(rows, heartbeat, out_path=args.out)
+        _record_output_row(
+            rows,
+            {"type": "desktop_snapshot", "iteration": iteration + 1, **_snapshot_to_dict(snapshot)},
+            out_path=args.out,
+        )
         for plan in send_plans:
             report = validate_send_preflight(
                 plan,
                 snapshot,
                 processed_event_ids=processed,
             )
-            rows.append(
+            _record_output_row(
+                rows,
                 {
                     "type": "send_preflight",
                     "iteration": iteration + 1,
                     **preflight_report_to_dict(report),
-                }
+                },
+                out_path=args.out,
             )
 
         if args.interval_seconds and iteration < args.iterations - 1:
             time.sleep(args.interval_seconds)
-
-    for row in rows:
-        print(json.dumps(row, ensure_ascii=False), flush=True)
-    _write_jsonl(args.out, rows)
 
 
 if __name__ == "__main__":
