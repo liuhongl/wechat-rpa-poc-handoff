@@ -386,6 +386,100 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertTrue(any(row["status"] == "ready_to_draft" for row in preflight_rows))
         self.assertTrue(any(row["status"] == "blocked" for row in preflight_rows))
 
+    def test_no_msgaudit_desktop_scan_poc_can_poll_accessibility_tree_directory(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_scan_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            snapshot_dir = tmp_path / "snapshots"
+            snapshot_dir.mkdir()
+            out_path = tmp_path / "scan.jsonl"
+            (snapshot_dir / "001-loan.txt").write_text(
+                "\n".join(
+                    [
+                        "22 row (selected)",
+                        "  25 text 汽车贷款小助手 是否需要经营证明取决于具体产品和客户身份。",
+                        "83 文本栏 (settable, string) 汽车贷款小助手",
+                        "112 文本输入区 (settable, string)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (snapshot_dir / "002-vip.txt").write_text(
+                "\n".join(
+                    [
+                        "22 row (selected)",
+                        "  25 text 汽车金融VIP群 邀请微信的小飞侠加入外部群聊失败",
+                        "83 文本栏 (settable, string) 汽车金融VIP群",
+                        "112 文本输入区 (settable, string)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--desktop-accessibility-tree-dir",
+                    str(snapshot_dir),
+                    "--iterations",
+                    "2",
+                    "--interval-seconds",
+                    "0",
+                    "--out",
+                    str(out_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()]
+
+        snapshot_rows = [row for row in rows if row["type"] == "desktop_snapshot"]
+
+        self.assertEqual(len(snapshot_rows), 2)
+        self.assertTrue(snapshot_rows[0]["raw_snapshot_ref"].endswith("001-loan.txt"))
+        self.assertTrue(snapshot_rows[1]["raw_snapshot_ref"].endswith("002-vip.txt"))
+        self.assertEqual(snapshot_rows[0]["current_chat_name"], "汽车贷款小助手")
+        self.assertEqual(snapshot_rows[1]["current_chat_name"], "汽车金融VIP群")
+
+    def test_no_msgaudit_write_snapshot_poc_writes_stdin_to_timestamped_file(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_write_snapshot_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_dir = Path(tmpdir) / "snapshots"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--snapshot-dir",
+                    str(snapshot_dir),
+                    "--prefix",
+                    "wecom",
+                    "--captured-at",
+                    "2026-05-17T10:00:00+08:00",
+                ],
+                input="83 文本栏 (settable, string) 汽车贷款小助手\n",
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            payload = json.loads(result.stdout)
+            written_path = Path(payload["path"])
+
+            self.assertTrue(written_path.exists())
+            self.assertEqual(written_path.parent, snapshot_dir)
+            self.assertEqual(written_path.read_text(encoding="utf-8"), "83 文本栏 (settable, string) 汽车贷款小助手\n")
+            self.assertTrue(written_path.name.startswith("wecom-20260517T100000"))
+
     def test_send_preflight_allows_safe_draft_when_desktop_snapshot_matches(self) -> None:
         plan = self._send_plan(mode="draft")
         snapshot = WeComDesktopSnapshot(

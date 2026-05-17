@@ -538,6 +538,28 @@ send_preflight
 
 这一步验证的是“多轮快照 -> 多轮安全判断 -> JSONL 日志”的运行框架。它还没有自动从企业微信实时抓取 UI 树，后续需要把 Computer Use/OCR/其它桌面采集器接入为真实 snapshot source。
 
+为了让外部采集器先接入这条链路，可以把 UI 树文本写入快照目录：
+
+```bash
+pbpaste | .venv/bin/python scripts/no_msgaudit_write_snapshot_poc.py \
+  --snapshot-dir data/no_msgaudit_desktop_agent/accessibility_snapshots \
+  --prefix wecom
+```
+
+然后让扫描器轮询该目录：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_desktop_scan_poc.py \
+  --assistant-name "刘红利" \
+  --ignore-state \
+  --desktop-accessibility-tree-dir data/no_msgaudit_desktop_agent/accessibility_snapshots \
+  --iterations 10 \
+  --interval-seconds 2 \
+  --out data/no_msgaudit_desktop_agent/desktop_scan_log.jsonl
+```
+
+这仍然是本地 POC。`pbpaste` 只是示例输入，真实生产化应替换成稳定的 Computer Use/OCR/系统辅助功能采集器。
+
 ### P2：半自动闭环
 
 ```text

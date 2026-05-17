@@ -103,7 +103,30 @@ def _snapshot_source_count(args: argparse.Namespace) -> int:
         len(args.desktop_snapshot_json)
         + len(args.desktop_snapshot_text_file)
         + len(args.desktop_accessibility_tree_text_file)
+        + (1 if args.desktop_accessibility_tree_dir else 0)
     )
+
+
+def _snapshot_source_kind_count(args: argparse.Namespace) -> int:
+    return sum(
+        [
+            bool(args.desktop_snapshot_json),
+            bool(args.desktop_snapshot_text_file),
+            bool(args.desktop_accessibility_tree_text_file),
+            bool(args.desktop_accessibility_tree_dir),
+        ]
+    )
+
+
+def _accessibility_tree_path_from_dir(directory: Path, *, iteration: int) -> Path:
+    paths = sorted(
+        [path for path in directory.glob("*.txt") if path.is_file()],
+        key=lambda path: path.name,
+    )
+    if not paths:
+        raise SystemExit(f"no *.txt accessibility tree snapshots found in {directory}")
+    index = min(iteration, len(paths) - 1)
+    return paths[index]
 
 
 def _load_snapshot_for_iteration(
@@ -131,6 +154,17 @@ def _load_snapshot_for_iteration(
         path = args.desktop_snapshot_text_file[iteration % len(args.desktop_snapshot_text_file)]
         return build_desktop_snapshot_from_ui_text(
             path.read_text(encoding="utf-8"),
+            captured_at=captured_at,
+            raw_snapshot_ref=str(path),
+        )
+    if args.desktop_accessibility_tree_dir:
+        path = _accessibility_tree_path_from_dir(
+            args.desktop_accessibility_tree_dir,
+            iteration=iteration,
+        )
+        return build_desktop_snapshot_from_accessibility_tree_text(
+            path.read_text(encoding="utf-8"),
+            group_targets=targets,
             captured_at=captured_at,
             raw_snapshot_ref=str(path),
         )
@@ -172,6 +206,7 @@ def main() -> None:
     parser.add_argument("--desktop-snapshot-json", type=Path, action="append", default=[])
     parser.add_argument("--desktop-snapshot-text-file", type=Path, action="append", default=[])
     parser.add_argument("--desktop-accessibility-tree-text-file", type=Path, action="append", default=[])
+    parser.add_argument("--desktop-accessibility-tree-dir", type=Path, default=None)
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--interval-seconds", type=float, default=2.0)
     parser.add_argument(
@@ -187,6 +222,11 @@ def main() -> None:
         raise SystemExit("--interval-seconds must be >= 0")
     if _snapshot_source_count(args) == 0:
         raise SystemExit("provide at least one desktop snapshot source")
+    if _snapshot_source_kind_count(args) > 1:
+        raise SystemExit(
+            "use only one snapshot source kind: JSON files, structured text files, "
+            "accessibility tree files, or accessibility tree directory"
+        )
 
     assistant_names = resolve_assistant_names(
         args.assistant_name,
