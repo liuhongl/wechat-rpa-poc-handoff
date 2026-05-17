@@ -10,6 +10,8 @@ from app.member_assistant_poc import GroupReplyTarget, MultiGroupReplyJob
 from app.no_msgaudit_desktop_agent import (
     WeComDesktopSnapshot,
     WeComEvent,
+    WeComSendPlan,
+    build_send_queue,
     build_desktop_snapshot_from_accessibility_tree_text,
     build_desktop_snapshot_from_ui_text,
     build_wecom_events_from_accessibility_tree_text,
@@ -96,6 +98,59 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertFalse(payload["send"])
         self.assertEqual(payload["chat_name"], "汽车贷款小助手")
         self.assertEqual(payload["reply_content"], "回复内容")
+
+    def test_build_send_queue_serializes_same_chat_plans_without_dropping_them(self) -> None:
+        plans = [
+            WeComSendPlan(
+                job_id="reply:event-1",
+                event_id="event-1",
+                chat_name="汽车贷款小助手",
+                reply_content="第一条回复",
+            ),
+            WeComSendPlan(
+                job_id="reply:event-2",
+                event_id="event-2",
+                chat_name="汽车贷款小助手",
+                reply_content="第二条回复",
+            ),
+            WeComSendPlan(
+                job_id="reply:event-3",
+                event_id="event-3",
+                chat_name="汽车金融VIP群",
+                reply_content="另一个群回复",
+            ),
+        ]
+
+        queue = build_send_queue(plans, active_chat_locks=set())
+
+        self.assertEqual(len(queue), 3)
+        self.assertEqual([item.chat_queue_position for item in queue], [1, 2, 1])
+        self.assertEqual(queue[0].dispatch_status, "ready_to_preflight")
+        self.assertEqual(queue[1].dispatch_status, "queued_after_chat_pending")
+        self.assertEqual(queue[1].blocked_by, ["same_chat_pending"])
+        self.assertEqual(queue[2].dispatch_status, "ready_to_preflight")
+
+    def test_build_send_queue_waits_when_chat_lock_is_active(self) -> None:
+        plans = [
+            WeComSendPlan(
+                job_id="reply:event-1",
+                event_id="event-1",
+                chat_name="汽车贷款小助手",
+                reply_content="第一条回复",
+            ),
+            WeComSendPlan(
+                job_id="reply:event-2",
+                event_id="event-2",
+                chat_name="汽车贷款小助手",
+                reply_content="第二条回复",
+            ),
+        ]
+
+        queue = build_send_queue(plans, active_chat_locks={"汽车贷款小助手"})
+
+        self.assertEqual(len(queue), 2)
+        self.assertEqual([item.dispatch_status for item in queue], ["waiting_for_chat_lock", "waiting_for_chat_lock"])
+        self.assertEqual([item.blocked_by for item in queue], [["chat_lock_active"], ["chat_lock_active"]])
 
     def test_no_msgaudit_desktop_agent_poc_outputs_events_jobs_and_send_plans(self) -> None:
         root = Path(__file__).resolve().parent.parent
@@ -1444,6 +1499,10 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
             summary = json.loads(result.stdout)
             health_report = json.loads((trial_dir / "health_report.json").read_text(encoding="utf-8"))
             trial_report = json.loads((trial_dir / "trial_report.json").read_text(encoding="utf-8"))
+            send_queue_rows = [
+                json.loads(line)
+                for line in (trial_dir / "send_queue.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
             scan_rows = [
                 json.loads(line)
                 for line in (trial_dir / "desktop_scan_log.jsonl").read_text(encoding="utf-8").splitlines()
@@ -1455,6 +1514,8 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual(summary["type"], "desktop_trial_summary")
         self.assertEqual(summary["capture_returncode"], 0)
         self.assertEqual(summary["scan_returncode"], 0)
+        self.assertEqual(summary["queue_returncode"], 0)
+        self.assertTrue(summary["queue_ok"])
         self.assertTrue(summary["health_ok"])
         self.assertTrue(summary["trial_ok"])
         self.assertTrue(snapshot_dir_exists)
@@ -1463,6 +1524,72 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertTrue(trial_report["ok"])
         self.assertEqual(trial_report["send_plan_count"], 1)
         self.assertTrue(any(row["type"] == "wecom_event" for row in scan_rows))
+        self.assertTrue(any(row["type"] == "send_queue_item" for row in send_queue_rows))
+
+    def test_no_msgaudit_send_queue_poc_outputs_same_chat_queue_items(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_send_queue_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "desktop_scan_log.jsonl"
+            out_path = Path(tmpdir) / "send_queue.jsonl"
+            log_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "send_plan",
+                                "job_id": "reply:event-1",
+                                "event_id": "event-1",
+                                "chat_name": "汽车贷款小助手",
+                                "reply_content": "第一条回复",
+                                "mode": "draft",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "send_plan",
+                                "job_id": "reply:event-2",
+                                "event_id": "event-2",
+                                "chat_name": "汽车贷款小助手",
+                                "reply_content": "第二条回复",
+                                "mode": "draft",
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--log-jsonl",
+                    str(log_path),
+                    "--out",
+                    str(out_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()]
+
+        queue_rows = [row for row in rows if row["type"] == "send_queue_item"]
+        summary_rows = [row for row in rows if row["type"] == "send_queue_summary"]
+
+        self.assertIn('"type": "send_queue_item"', result.stdout)
+        self.assertEqual(len(queue_rows), 2)
+        self.assertEqual([row["chat_queue_position"] for row in queue_rows], [1, 2])
+        self.assertEqual([row["dispatch_status"] for row in queue_rows], ["ready_to_preflight", "queued_after_chat_pending"])
+        self.assertEqual(summary_rows[0]["queue_item_count"], 2)
+        self.assertEqual(summary_rows[0]["ready_to_preflight_count"], 1)
+        self.assertEqual(summary_rows[0]["queued_after_chat_pending_count"], 1)
 
     def test_send_preflight_allows_safe_draft_when_desktop_snapshot_matches(self) -> None:
         plan = self._send_plan(mode="draft")

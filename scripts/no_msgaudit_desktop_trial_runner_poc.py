@@ -106,6 +106,20 @@ def _health_command(args: argparse.Namespace, *, scan_log: Path) -> list[str]:
     ]
 
 
+def _send_queue_command(args: argparse.Namespace, *, scan_log: Path, send_queue: Path) -> list[str]:
+    command = [
+        sys.executable,
+        str(ROOT_DIR / "scripts" / "no_msgaudit_send_queue_poc.py"),
+        "--log-jsonl",
+        str(scan_log),
+        "--out",
+        str(send_queue),
+    ]
+    for chat_name in args.active_chat_lock:
+        command.extend(["--active-chat-lock", chat_name])
+    return command
+
+
 def _trial_report_command(args: argparse.Namespace, *, scan_log: Path) -> list[str]:
     return [
         sys.executable,
@@ -143,6 +157,7 @@ def main() -> None:
     parser.add_argument("--health-max-heartbeat-age-seconds", type=int, default=60)
     parser.add_argument("--min-duration-seconds", type=int, default=60)
     parser.add_argument("--min-heartbeat-count", type=int, default=31)
+    parser.add_argument("--active-chat-lock", action="append", default=[])
     args = parser.parse_args()
 
     if args.capture_iterations < 1:
@@ -164,6 +179,7 @@ def main() -> None:
     snapshot_dir = trial_dir / "accessibility_snapshots"
     cursor_file = trial_dir / "snapshot_cursor.json"
     scan_log = trial_dir / "desktop_scan_log.jsonl"
+    send_queue = trial_dir / "send_queue.jsonl"
     health_report_path = trial_dir / "health_report.json"
     trial_report_path = trial_dir / "trial_report.json"
     trial_dir.mkdir(parents=True, exist_ok=True)
@@ -184,6 +200,16 @@ def main() -> None:
     else:
         (trial_dir / "scan_stdout.jsonl").write_text("", encoding="utf-8")
         (trial_dir / "scan_stderr.txt").write_text("capture_failed\n", encoding="utf-8")
+
+    queue_result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="scan_failed")
+    queue_report: dict[str, Any] = {}
+    if scan_result.returncode == 0:
+        queue_result = _run_command(
+            _send_queue_command(args, scan_log=scan_log, send_queue=send_queue),
+            stdout_path=trial_dir / "send_queue_stdout.jsonl",
+            stderr_path=trial_dir / "send_queue_stderr.txt",
+        )
+        queue_report = _parse_json_stdout(queue_result.stdout)
 
     health_result = subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="scan_failed")
     health_report: dict[str, Any] = {}
@@ -212,20 +238,25 @@ def main() -> None:
         "ok": (
             capture_result.returncode == 0
             and scan_result.returncode == 0
+            and queue_result.returncode == 0
             and health_result.returncode == 0
             and trial_result.returncode == 0
+            and queue_report.get("type") == "send_queue_summary"
             and bool(health_report.get("ok"))
             and bool(trial_report.get("ok"))
         ),
         "trial_dir": str(trial_dir),
         "snapshot_dir": str(snapshot_dir),
         "scan_log": str(scan_log),
+        "send_queue": str(send_queue),
         "health_report": str(health_report_path),
         "trial_report": str(trial_report_path),
         "capture_returncode": capture_result.returncode,
         "scan_returncode": scan_result.returncode,
+        "queue_returncode": queue_result.returncode,
         "health_returncode": health_result.returncode,
         "trial_returncode": trial_result.returncode,
+        "queue_ok": queue_result.returncode == 0 and queue_report.get("type") == "send_queue_summary",
         "health_ok": bool(health_report.get("ok")),
         "trial_ok": bool(trial_report.get("ok")),
     }

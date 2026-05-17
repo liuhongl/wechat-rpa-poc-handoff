@@ -271,6 +271,32 @@ tests/fixtures/multi_group_targets.json
   --max-heartbeat-age-seconds 60
 ```
 
+同群发送队列检查：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_send_queue_poc.py \
+  --log-jsonl data/no_msgaudit_desktop_agent/desktop_scan_log.jsonl \
+  --out data/no_msgaudit_desktop_agent/send_queue.jsonl
+```
+
+如果某个群正在写草稿或发送，可以加锁：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_send_queue_poc.py \
+  --log-jsonl data/no_msgaudit_desktop_agent/desktop_scan_log.jsonl \
+  --active-chat-lock "汽车贷款小助手" \
+  --out data/no_msgaudit_desktop_agent/send_queue.jsonl
+```
+
+通过标准：
+
+```text
+[x] 同一群多条 send_plan 都保留在队列里
+[x] 同一群第一条 ready_to_preflight
+[x] 同一群后续任务 queued_after_chat_pending
+[x] 被 active-chat-lock 锁住的群全部 waiting_for_chat_lock
+```
+
 通过标准：
 
 ```text
@@ -322,16 +348,18 @@ runner 会生成：
 ```text
 accessibility_snapshots/
 desktop_scan_log.jsonl
+send_queue.jsonl
 health_report.json
 trial_report.json
 summary.json
-capture_stdout.jsonl / scan_stdout.jsonl
+capture_stdout.jsonl / scan_stdout.jsonl / send_queue_stdout.jsonl
 ```
 
 注意：
 
 ```text
 [!] 当前 runner 用于把采集、扫描、健康检查和验收报告收敛成证据包
+[!] send_queue 解决的是“同一群逐条处理”，不是消息源可靠性
 [!] 它仍然不证明“多个群完整实时监听”已经成立
 [!] 真正的生产级多群无人值守还需要继续验证企业微信 UI 是否稳定暴露所有目标群 @ 事件
 ```

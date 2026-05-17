@@ -36,6 +36,18 @@ class WeComSendPlan:
 
 
 @dataclass(frozen=True)
+class WeComQueuedSendPlan:
+    queue_id: str
+    job_id: str
+    event_id: str
+    chat_name: str
+    reply_content: str
+    chat_queue_position: int
+    dispatch_status: str
+    blocked_by: list[str]
+
+
+@dataclass(frozen=True)
 class WeComDesktopSnapshot:
     current_chat_name: str
     selected_chat_name: str
@@ -295,6 +307,55 @@ def send_plan_to_dict(plan: WeComSendPlan) -> dict[str, Any]:
         "mode": plan.mode,
         "requires_operator_confirm": plan.requires_operator_confirm,
         "send": plan.mode == "auto_send",
+    }
+
+
+def build_send_queue(
+    send_plans: Iterable[WeComSendPlan],
+    *,
+    active_chat_locks: Iterable[str],
+) -> list[WeComQueuedSendPlan]:
+    locked_chats = {chat_name.strip() for chat_name in active_chat_locks if chat_name.strip()}
+    chat_counts: dict[str, int] = {}
+    queue: list[WeComQueuedSendPlan] = []
+    for plan in send_plans:
+        chat_name = plan.chat_name.strip()
+        position = chat_counts.get(chat_name, 0) + 1
+        chat_counts[chat_name] = position
+        if chat_name in locked_chats:
+            dispatch_status = "waiting_for_chat_lock"
+            blocked_by = ["chat_lock_active"]
+        elif position == 1:
+            dispatch_status = "ready_to_preflight"
+            blocked_by = []
+        else:
+            dispatch_status = "queued_after_chat_pending"
+            blocked_by = ["same_chat_pending"]
+        queue.append(
+            WeComQueuedSendPlan(
+                queue_id=f"queue:{chat_name}:{position}:{plan.job_id}",
+                job_id=plan.job_id,
+                event_id=plan.event_id,
+                chat_name=plan.chat_name,
+                reply_content=plan.reply_content,
+                chat_queue_position=position,
+                dispatch_status=dispatch_status,
+                blocked_by=blocked_by,
+            )
+        )
+    return queue
+
+
+def queued_send_plan_to_dict(item: WeComQueuedSendPlan) -> dict[str, Any]:
+    return {
+        "queue_id": item.queue_id,
+        "job_id": item.job_id,
+        "event_id": item.event_id,
+        "chat_name": item.chat_name,
+        "reply_content": item.reply_content,
+        "chat_queue_position": item.chat_queue_position,
+        "dispatch_status": item.dispatch_status,
+        "blocked_by": item.blocked_by,
     }
 
 

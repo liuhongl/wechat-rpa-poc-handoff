@@ -665,6 +665,24 @@ preflight_status_counts
 failures
 ```
 
+同群发送队列：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_send_queue_poc.py \
+  --log-jsonl data/no_msgaudit_desktop_agent/desktop_scan_log.jsonl \
+  --out data/no_msgaudit_desktop_agent/send_queue.jsonl
+```
+
+队列输出：
+
+```text
+send_queue_item
+send_queue_summary
+ready_to_preflight
+queued_after_chat_pending
+waiting_for_chat_lock
+```
+
 试运行验收报告：
 
 ```bash
@@ -708,6 +726,7 @@ summary.json
 health_report.json
 trial_report.json
 desktop_scan_log.jsonl
+send_queue.jsonl
 accessibility_snapshots/
 ```
 
@@ -725,6 +744,7 @@ accessibility_snapshots/
 [x] 健康检查脚本可以汇总 scan JSONL，并在心跳过期时返回非 0
 [x] 试运行验收脚本可以拒绝重复 send_plan、未知群和缺少 ready preflight 的日志
 [x] trial runner 可以用模拟 AX 快照生成完整证据包
+[x] send queue 可以把同一群多条 send_plan 串行化，避免回复过程覆盖草稿
 ```
 
 因此现阶段事实判断更新为：
@@ -739,7 +759,8 @@ Swift AX 当前可见消息区可以做候选事件提取，但不能替代完�
 snapshot cursor 可以降低扫描器重启后的重复消费风险
 scan health summary 可以作为后续告警和 24 小时试运行验收入口
 trial report 可以作为 1 小时/24 小时试运行后的验收判定入口
-trial runner 可以降低手工试运行命令出错概率，但不等同于完整消息流监听
+send queue 可以避免同一群并发写草稿，但不能让 UI 快照变成完整消息流
+trial runner 可以降低手工试运行命令出错概率，并会生成 send_queue.jsonl，但不等同于完整消息流监听
 AppleScript/System Events 不能稳定读到真实企业微信 UI tree
 ```
 
