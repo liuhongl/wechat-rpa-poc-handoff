@@ -130,6 +130,17 @@ def _accessibility_tree_path_from_dir(directory: Path, *, iteration: int) -> Pat
     return paths[index]
 
 
+def _next_unseen_accessibility_tree_path_from_dir(directory: Path, consumed_paths: set[str]) -> Path | None:
+    paths = sorted(
+        [path for path in directory.glob("*.txt") if path.is_file()],
+        key=lambda path: path.name,
+    )
+    for path in paths:
+        if str(path) not in consumed_paths:
+            return path
+    return None
+
+
 def _accessibility_tree_path_for_iteration(args: argparse.Namespace, *, iteration: int) -> Path:
     if args.desktop_accessibility_tree_dir:
         return _accessibility_tree_path_from_dir(
@@ -139,6 +150,20 @@ def _accessibility_tree_path_for_iteration(args: argparse.Namespace, *, iteratio
     if args.desktop_accessibility_tree_text_file:
         return args.desktop_accessibility_tree_text_file[iteration % len(args.desktop_accessibility_tree_text_file)]
     raise SystemExit("--events-from-accessibility-tree requires an accessibility tree snapshot source")
+
+
+def _load_accessibility_tree_snapshot_from_path(
+    path: Path,
+    *,
+    targets: list[GroupReplyTarget],
+    captured_at: str,
+) -> WeComDesktopSnapshot:
+    return build_desktop_snapshot_from_accessibility_tree_text(
+        path.read_text(encoding="utf-8"),
+        group_targets=targets,
+        captured_at=captured_at,
+        raw_snapshot_ref=str(path),
+    )
 
 
 def _load_snapshot_for_iteration(
@@ -277,6 +302,7 @@ def main() -> None:
     parser.add_argument("--desktop-accessibility-tree-text-file", type=Path, action="append", default=[])
     parser.add_argument("--desktop-accessibility-tree-dir", type=Path, default=None)
     parser.add_argument("--events-from-accessibility-tree", action="store_true")
+    parser.add_argument("--follow-snapshot-dir", action="store_true")
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--interval-seconds", type=float, default=2.0)
     parser.add_argument(
@@ -301,6 +327,8 @@ def main() -> None:
         args.desktop_accessibility_tree_text_file or args.desktop_accessibility_tree_dir
     ):
         raise SystemExit("--events-from-accessibility-tree requires an accessibility tree snapshot source")
+    if args.follow_snapshot_dir and not args.desktop_accessibility_tree_dir:
+        raise SystemExit("--follow-snapshot-dir requires --desktop-accessibility-tree-dir")
 
     assistant_names = resolve_assistant_names(
         args.assistant_name,
@@ -312,6 +340,7 @@ def main() -> None:
     roomid_by_chat_name = {target.chat_name: target.roomid for target in targets}
     processed = set() if args.ignore_state else load_processed_keys(args.state_file)
     seen_event_ids_this_run: set[str] = set()
+    consumed_snapshot_paths_this_run: set[str] = set()
 
     rows: list[dict[str, Any]] = []
     send_plans: list[Any] = []
@@ -343,8 +372,31 @@ def main() -> None:
 
     for iteration in range(args.iterations):
         captured_at = _now_iso()
+        follow_snapshot_path = None
+        if args.follow_snapshot_dir:
+            follow_snapshot_path = _next_unseen_accessibility_tree_path_from_dir(
+                args.desktop_accessibility_tree_dir,
+                consumed_snapshot_paths_this_run,
+            )
+            if follow_snapshot_path is None:
+                rows.append(
+                    {
+                        "type": "scan_heartbeat",
+                        "iteration": iteration + 1,
+                        "captured_at": captured_at,
+                        "snapshot_ref": "",
+                        "send_plan_count": 0,
+                        "status": "idle",
+                        "reason": "no_new_snapshot",
+                    }
+                )
+                if args.interval_seconds and iteration < args.iterations - 1:
+                    time.sleep(args.interval_seconds)
+                continue
+            consumed_snapshot_paths_this_run.add(str(follow_snapshot_path))
+
         if args.events_from_accessibility_tree:
-            event_source_path = _accessibility_tree_path_for_iteration(args, iteration=iteration)
+            event_source_path = follow_snapshot_path or _accessibility_tree_path_for_iteration(args, iteration=iteration)
             events = build_wecom_events_from_accessibility_tree_text(
                 event_source_path.read_text(encoding="utf-8"),
                 group_targets=targets,
@@ -372,12 +424,19 @@ def main() -> None:
             )
             seen_event_ids_this_run.update(job.source_msgid for job in jobs)
 
-        snapshot = _load_snapshot_for_iteration(
-            args,
-            targets=targets,
-            iteration=iteration,
-            captured_at=captured_at,
-        )
+        if follow_snapshot_path:
+            snapshot = _load_accessibility_tree_snapshot_from_path(
+                follow_snapshot_path,
+                targets=targets,
+                captured_at=captured_at,
+            )
+        else:
+            snapshot = _load_snapshot_for_iteration(
+                args,
+                targets=targets,
+                iteration=iteration,
+                captured_at=captured_at,
+            )
         heartbeat = {
             "type": "scan_heartbeat",
             "iteration": iteration + 1,

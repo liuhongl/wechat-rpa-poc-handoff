@@ -2,6 +2,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -710,6 +711,128 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual(len(plan_rows), 1)
         self.assertEqual(len(preflight_rows), 1)
         self.assertEqual([row["send_plan_count"] for row in heartbeat_rows], [1, 0])
+
+    def test_no_msgaudit_desktop_scan_poc_follow_dir_consumes_each_snapshot_once(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_scan_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            snapshot_dir = tmp_path / "snapshots"
+            snapshot_dir.mkdir()
+            out_path = tmp_path / "scan.jsonl"
+            (snapshot_dir / "001-loan.txt").write_text(
+                "\n".join(
+                    [
+                        "22 row (selected)",
+                        "  25 text 汽车贷款小助手 是否需要经营证明取决于具体产品和客户身份。",
+                        "83 文本栏 (settable, string) 汽车贷款小助手",
+                        "112 文本输入区 (settable, string)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            (snapshot_dir / "002-vip.txt").write_text(
+                "\n".join(
+                    [
+                        "22 row (selected)",
+                        "  25 text 汽车金融VIP群 邀请微信的小飞侠加入外部群聊失败",
+                        "83 文本栏 (settable, string) 汽车金融VIP群",
+                        "112 文本输入区 (settable, string)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--desktop-accessibility-tree-dir",
+                    str(snapshot_dir),
+                    "--follow-snapshot-dir",
+                    "--iterations",
+                    "3",
+                    "--interval-seconds",
+                    "0",
+                    "--out",
+                    str(out_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()]
+
+        heartbeat_rows = [row for row in rows if row["type"] == "scan_heartbeat"]
+        snapshot_rows = [row for row in rows if row["type"] == "desktop_snapshot"]
+
+        self.assertEqual(len(heartbeat_rows), 3)
+        self.assertEqual(len(snapshot_rows), 2)
+        self.assertTrue(snapshot_rows[0]["raw_snapshot_ref"].endswith("001-loan.txt"))
+        self.assertTrue(snapshot_rows[1]["raw_snapshot_ref"].endswith("002-vip.txt"))
+        self.assertEqual(heartbeat_rows[2]["status"], "idle")
+        self.assertEqual(heartbeat_rows[2]["reason"], "no_new_snapshot")
+        self.assertEqual(heartbeat_rows[2]["send_plan_count"], 0)
+
+    def test_no_msgaudit_desktop_scan_poc_follow_dir_waits_for_late_snapshot(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_scan_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            snapshot_dir = tmp_path / "snapshots"
+            snapshot_dir.mkdir()
+            out_path = tmp_path / "scan.jsonl"
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--desktop-accessibility-tree-dir",
+                    str(snapshot_dir),
+                    "--follow-snapshot-dir",
+                    "--iterations",
+                    "3",
+                    "--interval-seconds",
+                    "0.15",
+                    "--out",
+                    str(out_path),
+                ],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            time.sleep(0.05)
+            (snapshot_dir / "001-loan.txt").write_text(
+                "\n".join(
+                    [
+                        "22 row (selected)",
+                        "  25 text 汽车贷款小助手 是否需要经营证明取决于具体产品和客户身份。",
+                        "83 文本栏 (settable, string) 汽车贷款小助手",
+                        "112 文本输入区 (settable, string)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            stdout, stderr = process.communicate(timeout=5)
+
+            self.assertEqual(process.returncode, 0, stderr)
+            self.assertIn('"status": "idle"', stdout)
+            rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()]
+
+        heartbeat_rows = [row for row in rows if row["type"] == "scan_heartbeat"]
+        snapshot_rows = [row for row in rows if row["type"] == "desktop_snapshot"]
+
+        self.assertEqual(heartbeat_rows[0]["status"], "idle")
+        self.assertEqual(len(snapshot_rows), 1)
+        self.assertTrue(snapshot_rows[0]["raw_snapshot_ref"].endswith("001-loan.txt"))
 
     def test_no_msgaudit_write_snapshot_poc_writes_stdin_to_timestamped_file(self) -> None:
         root = Path(__file__).resolve().parent.parent
