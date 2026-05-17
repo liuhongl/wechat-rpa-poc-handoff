@@ -25,6 +25,8 @@ from app.member_assistant_poc import (
 )
 from app.no_msgaudit_desktop_agent import (
     WeComDesktopSnapshot,
+    build_desktop_snapshot_from_accessibility_tree_text,
+    build_desktop_snapshot_from_ui_text,
     build_wecom_events_from_ui_snapshot,
     preflight_report_to_dict,
     reply_job_to_send_plan,
@@ -112,6 +114,18 @@ def main() -> None:
         default=None,
         help="Optional dry-run desktop snapshot used to emit send_preflight rows. Does not control WeCom.",
     )
+    parser.add_argument(
+        "--desktop-snapshot-text-file",
+        type=Path,
+        default=None,
+        help="Optional structured UI text file used to build a dry-run desktop snapshot. Does not control WeCom.",
+    )
+    parser.add_argument(
+        "--desktop-accessibility-tree-text-file",
+        type=Path,
+        default=None,
+        help="Optional Computer Use accessibility tree text file used to build a dry-run desktop snapshot.",
+    )
     parser.add_argument("--ignore-state", action="store_true")
     parser.add_argument("--mark-planned", action="store_true")
     parser.add_argument(
@@ -161,7 +175,32 @@ def main() -> None:
         assistant_sender_ids=args.assistant_sender_id,
     )
     send_plans = [reply_job_to_send_plan(job) for job in jobs]
-    desktop_snapshot = _load_desktop_snapshot(args.desktop_snapshot_json) if args.desktop_snapshot_json else None
+    desktop_snapshot = None
+    snapshot_sources = [
+        bool(args.desktop_snapshot_json),
+        bool(args.desktop_snapshot_text_file),
+        bool(args.desktop_accessibility_tree_text_file),
+    ]
+    if sum(snapshot_sources) > 1:
+        raise SystemExit(
+            "use only one of --desktop-snapshot-json, --desktop-snapshot-text-file, "
+            "or --desktop-accessibility-tree-text-file"
+        )
+    if args.desktop_snapshot_json:
+        desktop_snapshot = _load_desktop_snapshot(args.desktop_snapshot_json)
+    if args.desktop_snapshot_text_file:
+        desktop_snapshot = build_desktop_snapshot_from_ui_text(
+            args.desktop_snapshot_text_file.read_text(encoding="utf-8"),
+            captured_at=detected_at,
+            raw_snapshot_ref=str(args.desktop_snapshot_text_file),
+        )
+    if args.desktop_accessibility_tree_text_file:
+        desktop_snapshot = build_desktop_snapshot_from_accessibility_tree_text(
+            args.desktop_accessibility_tree_text_file.read_text(encoding="utf-8"),
+            group_targets=targets,
+            captured_at=detected_at,
+            raw_snapshot_ref=str(args.desktop_accessibility_tree_text_file),
+        )
 
     rows: list[dict[str, Any]] = []
     for event in events:

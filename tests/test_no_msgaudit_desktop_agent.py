@@ -9,6 +9,8 @@ from app.member_assistant_poc import GroupReplyTarget, MultiGroupReplyJob
 from app.no_msgaudit_desktop_agent import (
     WeComDesktopSnapshot,
     WeComEvent,
+    build_desktop_snapshot_from_accessibility_tree_text,
+    build_desktop_snapshot_from_ui_text,
     build_wecom_events_from_ui_snapshot,
     preflight_report_to_dict,
     reply_job_to_send_plan,
@@ -165,6 +167,152 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertFalse(preflight_rows[1]["ok"])
         self.assertEqual(preflight_rows[1]["status"], "blocked")
         self.assertIn("current_chat_mismatch", preflight_rows[1]["failures"])
+
+    def test_builds_desktop_snapshot_from_structured_ui_text(self) -> None:
+        snapshot = build_desktop_snapshot_from_ui_text(
+            """
+            当前群名: 汽车贷款小助手
+            左侧选中会话: 汽车贷款小助手
+            输入框:
+            企业微信在线: 是
+            窗口可见: 是
+            """,
+            captured_at="2026-05-17T10:00:00+08:00",
+            raw_snapshot_ref="computer-use:state-1",
+        )
+
+        self.assertEqual(snapshot.current_chat_name, "汽车贷款小助手")
+        self.assertEqual(snapshot.selected_chat_name, "汽车贷款小助手")
+        self.assertEqual(snapshot.input_text, "")
+        self.assertTrue(snapshot.app_online)
+        self.assertTrue(snapshot.window_visible)
+        self.assertEqual(snapshot.captured_at, "2026-05-17T10:00:00+08:00")
+        self.assertEqual(snapshot.raw_snapshot_ref, "computer-use:state-1")
+
+    def test_builds_desktop_snapshot_from_english_ui_text_and_parses_false_booleans(self) -> None:
+        snapshot = build_desktop_snapshot_from_ui_text(
+            """
+            current_chat_name: 客户联系
+            selected_chat_name: 汽车金融VIP群
+            input_text: 未发送草稿
+            app_online: false
+            window_visible: false
+            """,
+            captured_at="2026-05-17T10:00:00+08:00",
+        )
+
+        self.assertEqual(snapshot.current_chat_name, "客户联系")
+        self.assertEqual(snapshot.selected_chat_name, "汽车金融VIP群")
+        self.assertEqual(snapshot.input_text, "未发送草稿")
+        self.assertFalse(snapshot.app_online)
+        self.assertFalse(snapshot.window_visible)
+
+    def test_builds_desktop_snapshot_from_computer_use_accessibility_tree_text(self) -> None:
+        targets = [
+            GroupReplyTarget(roomid="wr_auto_loan_group", chat_name="汽车贷款小助手"),
+            GroupReplyTarget(roomid="wr_vip_group", chat_name="汽车金融VIP群"),
+        ]
+        snapshot = build_desktop_snapshot_from_accessibility_tree_text(
+            """
+            22 row (selected)
+              23 单元格 (selected)
+                24 图像
+                25 text 汽车金融VIP群 邀请微信的小飞侠加入外部群聊失败
+                26 文本 1分钟前
+                27 文本输入区 外部
+            81 分离器 (disabled, settable, float) 250
+            83 文本栏 (settable, string) 汽车金融VIP群
+            84 文本 由企业微信用户创建的外部群，含1位外部联系人 | 群主: 刘红利
+            111 滚动区
+              112 文本输入区 (settable, string)
+            The focused UI element is 112 文本输入区 (settable, string).
+            """,
+            group_targets=targets,
+            captured_at="2026-05-17T10:00:00+08:00",
+            raw_snapshot_ref="computer-use:企业微信",
+        )
+
+        self.assertEqual(snapshot.current_chat_name, "汽车金融VIP群")
+        self.assertEqual(snapshot.selected_chat_name, "汽车金融VIP群")
+        self.assertEqual(snapshot.input_text, "")
+        self.assertTrue(snapshot.app_online)
+        self.assertTrue(snapshot.window_visible)
+        self.assertEqual(snapshot.raw_snapshot_ref, "computer-use:企业微信")
+
+    def test_no_msgaudit_desktop_agent_poc_can_build_preflight_from_snapshot_text_file(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_agent_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "desktop_snapshot.txt"
+            snapshot_path.write_text(
+                "\n".join(
+                    [
+                        "当前群名: 汽车贷款小助手",
+                        "左侧选中会话: 汽车贷款小助手",
+                        "输入框:",
+                        "企业微信在线: 是",
+                        "窗口可见: 是",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--desktop-snapshot-text-file",
+                    str(snapshot_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+        self.assertIn('"type": "send_preflight"', result.stdout)
+        self.assertIn('"status": "ready_to_draft"', result.stdout)
+        self.assertIn('"status": "blocked"', result.stdout)
+
+    def test_no_msgaudit_desktop_agent_poc_can_build_preflight_from_accessibility_tree_text_file(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_agent_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "accessibility_tree.txt"
+            snapshot_path.write_text(
+                "\n".join(
+                    [
+                        "22 row (selected)",
+                        "  25 text 汽车金融VIP群 邀请微信的小飞侠加入外部群聊失败",
+                        "83 文本栏 (settable, string) 汽车金融VIP群",
+                        "112 文本输入区 (settable, string)",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--desktop-accessibility-tree-text-file",
+                    str(snapshot_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+        self.assertIn('"type": "send_preflight"', result.stdout)
+        self.assertIn('"expected_chat_name": "汽车金融VIP群"', result.stdout)
+        self.assertIn('"status": "ready_to_draft"', result.stdout)
 
     def test_send_preflight_allows_safe_draft_when_desktop_snapshot_matches(self) -> None:
         plan = self._send_plan(mode="draft")

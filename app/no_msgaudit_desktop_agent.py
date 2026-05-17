@@ -106,6 +106,80 @@ def build_wecom_events_from_ui_snapshot(
     return events
 
 
+def build_desktop_snapshot_from_ui_text(
+    ui_text: str,
+    *,
+    captured_at: str,
+    raw_snapshot_ref: str = "",
+) -> WeComDesktopSnapshot:
+    fields = _parse_key_value_lines(ui_text)
+    return WeComDesktopSnapshot(
+        current_chat_name=_first_field(
+            fields,
+            "current_chat_name",
+            "当前群名",
+            "顶部群名",
+            "当前聊天",
+        ),
+        selected_chat_name=_first_field(
+            fields,
+            "selected_chat_name",
+            "左侧选中会话",
+            "选中会话",
+        ),
+        input_text=_first_field(
+            fields,
+            "input_text",
+            "输入框",
+            "草稿",
+        ),
+        app_online=_parse_bool(
+            _first_field(
+                fields,
+                "app_online",
+                "企业微信在线",
+                default="true",
+            )
+        ),
+        window_visible=_parse_bool(
+            _first_field(
+                fields,
+                "window_visible",
+                "窗口可见",
+                default="true",
+            )
+        ),
+        captured_at=captured_at,
+        raw_snapshot_ref=raw_snapshot_ref,
+    )
+
+
+def build_desktop_snapshot_from_accessibility_tree_text(
+    tree_text: str,
+    *,
+    group_targets: Iterable[GroupReplyTarget],
+    captured_at: str,
+    raw_snapshot_ref: str = "",
+) -> WeComDesktopSnapshot:
+    target_names = [
+        target.chat_name.strip()
+        for target in group_targets
+        if target.enabled and target.chat_name.strip()
+    ]
+    current_chat_name = _find_current_chat_name_from_accessibility_tree(tree_text, target_names)
+    selected_chat_name = _find_selected_chat_name_from_accessibility_tree(tree_text, target_names)
+    input_text = _find_composer_input_text_from_accessibility_tree(tree_text)
+    return WeComDesktopSnapshot(
+        current_chat_name=current_chat_name,
+        selected_chat_name=selected_chat_name,
+        input_text=input_text,
+        app_online=bool(tree_text.strip()),
+        window_visible=bool(tree_text.strip()),
+        captured_at=captured_at,
+        raw_snapshot_ref=raw_snapshot_ref,
+    )
+
+
 def wecom_event_to_plain_text_record(
     event: WeComEvent,
     *,
@@ -235,3 +309,67 @@ def preflight_report_to_dict(report: WeComSendPreflightReport) -> dict[str, Any]
         "warnings": report.warnings,
         "can_send": report.can_send,
     }
+
+
+def _parse_key_value_lines(text: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        separator = ":" if ":" in line else "：" if "：" in line else ""
+        if not separator:
+            continue
+        key, value = line.split(separator, 1)
+        fields[key.strip()] = value.strip()
+    return fields
+
+
+def _first_field(fields: dict[str, str], *keys: str, default: str = "") -> str:
+    for key in keys:
+        if key in fields:
+            return fields[key]
+    return default
+
+
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() not in {"0", "false", "no", "否", "不", "离线", "不可见"}
+
+
+def _find_current_chat_name_from_accessibility_tree(text: str, target_names: list[str]) -> str:
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if "文本栏 (settable, string)" not in line:
+            continue
+        for target_name in target_names:
+            if target_name in line:
+                return target_name
+    return ""
+
+
+def _find_selected_chat_name_from_accessibility_tree(text: str, target_names: list[str]) -> str:
+    lines = text.splitlines()
+    for index, raw_line in enumerate(lines):
+        if "row (selected)" not in raw_line:
+            continue
+        block = "\n".join(lines[index : index + 12])
+        for target_name in target_names:
+            if target_name in block:
+                return target_name
+    return ""
+
+
+def _find_composer_input_text_from_accessibility_tree(text: str) -> str:
+    values: list[str] = []
+    marker = "文本输入区 (settable, string)"
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line.startswith("The focused UI element"):
+            continue
+        if marker not in line:
+            continue
+        _, value = line.split(marker, 1)
+        values.append(value.strip())
+    if not values:
+        return ""
+    return values[-1]

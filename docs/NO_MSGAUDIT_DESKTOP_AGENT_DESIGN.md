@@ -451,7 +451,7 @@ send_plan
 [x] 定义发送前校验模型
 [ ] 连续扫描会话列表，发现多个群的 [有人@我]
 [ ] 打开目标群后读取最近上下文
-[ ] 从真实企业微信采集顶部群名、左侧选中会话、输入框内容
+[x] 从真实企业微信初步采集顶部群名、左侧选中会话、输入框内容
 [x] 用桌面快照校验顶部群名和左侧选中会话
 [ ] 只写草稿，不发送
 ```
@@ -494,6 +494,25 @@ status=blocked 表示必须停止，不能写入或发送
 ```
 
 注意：这一步还没有从真实企业微信自动采集桌面快照，只是把“是否允许写草稿/发送”的判断模型先固定下来。
+
+2026-05-17 使用 Computer Use 对真实企业微信窗口做了一次只读验证，accessibility tree 中可以看到：
+
+```text
+顶部当前群名：汽车金融VIP群
+左侧选中会话：汽车金融VIP群
+输入框元素：文本输入区 (settable, string)，当前为空
+```
+
+这说明真实 UI 树里存在构造 `WeComDesktopSnapshot` 所需字段。当前已支持从 Computer Use 风格的 accessibility tree 文本生成快照：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_desktop_agent_poc.py \
+  --assistant-name "刘红利" \
+  --ignore-state \
+  --desktop-accessibility-tree-text-file /tmp/wecom_accessibility_tree.txt
+```
+
+注意：这仍然只是“单次 UI 树可解析”，不是“连续监听稳定”。后续还必须验证窗口切换、滚动、锁屏、网络波动、企业微信 UI 更新后的稳定性。
 
 ### P2：半自动闭环
 
