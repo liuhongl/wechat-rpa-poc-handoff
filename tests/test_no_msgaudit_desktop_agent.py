@@ -152,6 +152,33 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual([item.dispatch_status for item in queue], ["waiting_for_chat_lock", "waiting_for_chat_lock"])
         self.assertEqual([item.blocked_by for item in queue], [["chat_lock_active"], ["chat_lock_active"]])
 
+    def test_build_send_queue_promotes_next_same_chat_plan_after_completion(self) -> None:
+        plans = [
+            WeComSendPlan(
+                job_id="reply:event-1",
+                event_id="event-1",
+                chat_name="汽车贷款小助手",
+                reply_content="第一条回复",
+            ),
+            WeComSendPlan(
+                job_id="reply:event-2",
+                event_id="event-2",
+                chat_name="汽车贷款小助手",
+                reply_content="第二条回复",
+            ),
+        ]
+
+        queue = build_send_queue(
+            plans,
+            active_chat_locks=set(),
+            completed_event_ids={"event-1"},
+        )
+
+        self.assertEqual(len(queue), 1)
+        self.assertEqual(queue[0].event_id, "event-2")
+        self.assertEqual(queue[0].chat_queue_position, 1)
+        self.assertEqual(queue[0].dispatch_status, "ready_to_preflight")
+
     def test_no_msgaudit_desktop_agent_poc_outputs_events_jobs_and_send_plans(self) -> None:
         root = Path(__file__).resolve().parent.parent
         script = root / "scripts" / "no_msgaudit_desktop_agent_poc.py"
@@ -1590,6 +1617,80 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual(summary_rows[0]["queue_item_count"], 2)
         self.assertEqual(summary_rows[0]["ready_to_preflight_count"], 1)
         self.assertEqual(summary_rows[0]["queued_after_chat_pending_count"], 1)
+
+    def test_no_msgaudit_send_queue_poc_promotes_next_item_after_send_result(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_send_queue_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            log_path = Path(tmpdir) / "desktop_scan_log.jsonl"
+            out_path = Path(tmpdir) / "send_queue.jsonl"
+            log_path.write_text(
+                "\n".join(
+                    [
+                        json.dumps(
+                            {
+                                "type": "send_plan",
+                                "job_id": "reply:event-1",
+                                "event_id": "event-1",
+                                "chat_name": "汽车贷款小助手",
+                                "reply_content": "第一条回复",
+                                "mode": "draft",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "send_result",
+                                "job_id": "reply:event-1",
+                                "event_id": "event-1",
+                                "chat_name": "汽车贷款小助手",
+                                "status": "draft_written",
+                            },
+                            ensure_ascii=False,
+                        ),
+                        json.dumps(
+                            {
+                                "type": "send_plan",
+                                "job_id": "reply:event-2",
+                                "event_id": "event-2",
+                                "chat_name": "汽车贷款小助手",
+                                "reply_content": "第二条回复",
+                                "mode": "draft",
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--log-jsonl",
+                    str(log_path),
+                    "--out",
+                    str(out_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()]
+
+        queue_rows = [row for row in rows if row["type"] == "send_queue_item"]
+        summary_rows = [row for row in rows if row["type"] == "send_queue_summary"]
+
+        self.assertEqual(len(queue_rows), 1)
+        self.assertEqual(queue_rows[0]["event_id"], "event-2")
+        self.assertEqual(queue_rows[0]["chat_queue_position"], 1)
+        self.assertEqual(queue_rows[0]["dispatch_status"], "ready_to_preflight")
+        self.assertEqual(summary_rows[0]["completed_event_count"], 1)
+        self.assertEqual(summary_rows[0]["skipped_completed_plan_count"], 1)
 
     def test_send_preflight_allows_safe_draft_when_desktop_snapshot_matches(self) -> None:
         plan = self._send_plan(mode="draft")

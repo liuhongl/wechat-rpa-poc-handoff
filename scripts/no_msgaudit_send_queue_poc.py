@@ -18,6 +18,8 @@ from app.no_msgaudit_desktop_agent import (
     queued_send_plan_to_dict,
 )
 
+COMPLETED_SEND_RESULT_STATUSES = {"draft_written", "sent", "confirmed_sent"}
+
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -43,6 +45,18 @@ def _send_plan_from_row(row: dict[str, Any]) -> WeComSendPlan:
     )
 
 
+def _completed_event_ids_from_rows(rows: list[dict[str, Any]]) -> set[str]:
+    completed: set[str] = set()
+    for row in rows:
+        if row.get("type") != "send_result":
+            continue
+        status = str(row.get("status") or "")
+        event_id = str(row.get("event_id") or "").strip()
+        if status in COMPLETED_SEND_RESULT_STATUSES and event_id:
+            completed.add(event_id)
+    return completed
+
+
 def _write_rows(path: Path, rows: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -55,7 +69,10 @@ def build_send_queue_rows(
     rows: list[dict[str, Any]],
     *,
     active_chat_locks: list[str],
+    completed_event_ids: list[str],
 ) -> list[dict[str, Any]]:
+    completed = _completed_event_ids_from_rows(rows)
+    completed.update(event_id.strip() for event_id in completed_event_ids if event_id.strip())
     send_plans = [
         _send_plan_from_row(row)
         for row in rows
@@ -64,6 +81,7 @@ def build_send_queue_rows(
     queue_items = build_send_queue(
         send_plans,
         active_chat_locks=active_chat_locks,
+        completed_event_ids=completed,
     )
     queue_rows = [
         {"type": "send_queue_item", **queued_send_plan_to_dict(item)}
@@ -73,6 +91,8 @@ def build_send_queue_rows(
     summary = {
         "type": "send_queue_summary",
         "queue_item_count": len(queue_rows),
+        "completed_event_count": len(completed),
+        "skipped_completed_plan_count": sum(1 for plan in send_plans if plan.event_id in completed),
         "ready_to_preflight_count": status_counts["ready_to_preflight"],
         "queued_after_chat_pending_count": status_counts["queued_after_chat_pending"],
         "waiting_for_chat_lock_count": status_counts["waiting_for_chat_lock"],
@@ -86,6 +106,7 @@ def main() -> None:
     )
     parser.add_argument("--log-jsonl", type=Path, required=True)
     parser.add_argument("--active-chat-lock", action="append", default=[])
+    parser.add_argument("--completed-event-id", action="append", default=[])
     parser.add_argument(
         "--out",
         type=Path,
@@ -96,6 +117,7 @@ def main() -> None:
     rows = build_send_queue_rows(
         _load_jsonl(args.log_jsonl),
         active_chat_locks=args.active_chat_lock,
+        completed_event_ids=args.completed_event_id,
     )
     _write_rows(args.out, rows)
     for row in rows:

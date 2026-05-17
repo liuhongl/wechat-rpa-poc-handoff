@@ -683,6 +683,16 @@ queued_after_chat_pending
 waiting_for_chat_lock
 ```
 
+队列会把以下 `send_result.status` 视为完成，并跳过对应 event_id：
+
+```text
+draft_written
+sent
+confirmed_sent
+```
+
+这让同群下一条 send_plan 可以在下一轮队列构建时晋升为 `ready_to_preflight`。
+
 试运行验收报告：
 
 ```bash

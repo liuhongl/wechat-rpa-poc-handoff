@@ -314,11 +314,15 @@ def build_send_queue(
     send_plans: Iterable[WeComSendPlan],
     *,
     active_chat_locks: Iterable[str],
+    completed_event_ids: Iterable[str] = (),
 ) -> list[WeComQueuedSendPlan]:
     locked_chats = {chat_name.strip() for chat_name in active_chat_locks if chat_name.strip()}
+    completed = {event_id.strip() for event_id in completed_event_ids if event_id.strip()}
     chat_counts: dict[str, int] = {}
     queue: list[WeComQueuedSendPlan] = []
     for plan in send_plans:
+        if plan.event_id.strip() in completed:
+            continue
         chat_name = plan.chat_name.strip()
         position = chat_counts.get(chat_name, 0) + 1
         chat_counts[chat_name] = position

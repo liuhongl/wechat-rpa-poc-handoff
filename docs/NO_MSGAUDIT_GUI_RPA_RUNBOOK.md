@@ -288,6 +288,20 @@ tests/fixtures/multi_group_targets.json
   --out data/no_msgaudit_desktop_agent/send_queue.jsonl
 ```
 
+如果第一条已经写入草稿或发送成功，需要在日志里记录 `send_result`，队列会跳过已完成事件，让同群下一条晋升：
+
+```json
+{"type": "send_result", "event_id": "event-1", "job_id": "reply:event-1", "chat_name": "汽车贷款小助手", "status": "draft_written"}
+```
+
+POC 支持的完成状态：
+
+```text
+draft_written
+sent
+confirmed_sent
+```
+
 通过标准：
 
 ```text
@@ -295,6 +309,7 @@ tests/fixtures/multi_group_targets.json
 [x] 同一群第一条 ready_to_preflight
 [x] 同一群后续任务 queued_after_chat_pending
 [x] 被 active-chat-lock 锁住的群全部 waiting_for_chat_lock
+[x] 已有完成状态的 event_id 会从队列移除，同群下一条变为 ready_to_preflight
 ```
 
 通过标准：
