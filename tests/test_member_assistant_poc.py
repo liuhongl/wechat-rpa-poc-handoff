@@ -10,6 +10,7 @@ from app.member_assistant_poc import (
     build_at_member_applescript,
     build_send_text_applescript,
     extract_wecom_ui_mention_records,
+    extract_wecom_ui_mention_records_for_targets,
     extract_plain_text_records,
     filter_unprocessed_records,
     plan_bill_reminder_actions,
@@ -84,6 +85,26 @@ class MemberAssistantPocTests(unittest.TestCase):
         )
 
         self.assertEqual(records, [])
+
+    def test_extract_wecom_ui_mention_records_for_targets_routes_allowlisted_groups(self) -> None:
+        ui_text = """
+25 text 汽车贷款小助手 [有人@我] sky: 需要经营证明吗\u2005@刘红利
+32 text 汽车金融VIP群 [有人@我] kay: 贷款利率是多少 @刘红利
+40 text 暂停自动回复群 [有人@我] user: 需要经营证明吗 @刘红利
+45 text 未配置群 [有人@我] user: 贷款利率是多少 @刘红利
+"""
+        targets = [
+            GroupReplyTarget(roomid="wr_auto_loan_group", chat_name="汽车贷款小助手"),
+            GroupReplyTarget(roomid="wr_vip_group", chat_name="汽车金融VIP群"),
+            GroupReplyTarget(roomid="wr_disabled_group", chat_name="暂停自动回复群", enabled=False),
+        ]
+
+        records = extract_wecom_ui_mention_records_for_targets(ui_text, targets)
+
+        self.assertEqual([record.roomid for record in records], ["wr_auto_loan_group", "wr_vip_group"])
+        self.assertEqual(records[0].sender, "sky")
+        self.assertEqual(records[1].sender, "kay")
+        self.assertEqual(records[0].msgid, "ui:汽车贷款小助手:sky:需要经营证明吗\u2005@刘红利")
 
     def test_build_send_text_applescript_defaults_to_dry_run(self) -> None:
         script = build_send_text_applescript(

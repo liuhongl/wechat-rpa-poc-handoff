@@ -310,6 +310,61 @@ data/member_assistant_poc/processed_msgids.json
 
 因此，无 SDK 自动回复目前可验证到“Computer Use 驱动的半自动闭环”；如果要做稳定无人值守，仍需要接会话内容存档 SDK 或换成能稳定读取企业微信客户端 UI 的自动化层。
 
+### 无会话内容存档的多群 GUI 快照方案
+
+不接会话内容存档时，消息输入只能来自企业微信客户端 GUI。当前 POC 用“GUI/Computer Use/OCR 看到的会话列表文本”模拟监听输入：
+
+```text
+企业微信左侧会话列表快照
+-> 解析 [有人@我] 行
+-> 按 group allowlist 过滤目标群
+-> 转成 PlainTextRecord
+-> 复用多群回复规划
+-> 生成发送计划
+```
+
+运行 GUI 快照回复规划：
+
+```bash
+.venv/bin/python scripts/gui_snapshot_reply_planner_poc.py \
+  --assistant-name "刘红利" \
+  --ignore-state \
+  --out /tmp/gui_snapshot_reply_jobs.jsonl
+```
+
+样例快照：
+
+```text
+tests/fixtures/wecom_gui_multi_group_snapshot.txt
+```
+
+当前样例会生成两条回复任务：
+
+```text
+汽车贷款小助手 / sky / 需要经营证明吗
+汽车金融VIP群 / kay / 贷款利率是多少
+```
+
+并跳过：
+
+```text
+[x] 暂停自动回复群
+[x] 未配置群
+[x] 没有 [有人@我] 的普通会话
+```
+
+再转成桌面发送计划：
+
+```bash
+.venv/bin/python scripts/multi_group_desktop_sender_poc.py \
+  --reply-jobs-jsonl /tmp/gui_snapshot_reply_jobs.jsonl \
+  --max-jobs 10 \
+  --include-applescript \
+  --out /tmp/gui_snapshot_desktop_send_plans.jsonl
+```
+
+结论：无会话存档方案可以验证“GUI 快照 -> 多群回复任务 -> 多群发送计划”的闭环；但真实监听仍依赖 GUI Agent/OCR/Computer Use 是否能持续稳定获得企业微信会话列表快照，不具备会话内容存档的稳定性。
+
 ## 验证 2：客户端能否定位群并发送文本
 
 只打印 AppleScript，不操作客户端：

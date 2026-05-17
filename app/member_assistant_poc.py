@@ -235,6 +235,24 @@ def extract_wecom_ui_mention_records(
     return records
 
 
+def extract_wecom_ui_mention_records_for_targets(
+    ui_text: str,
+    group_targets: Iterable[GroupReplyTarget],
+) -> list[PlainTextRecord]:
+    records: list[PlainTextRecord] = []
+    for target in group_targets:
+        if not target.enabled or not target.roomid.strip() or not target.chat_name.strip():
+            continue
+        records.extend(
+            extract_wecom_ui_mention_records(
+                ui_text,
+                target_chat_name=target.chat_name,
+                roomid=target.roomid,
+            )
+        )
+    return records
+
+
 def record_key(record: PlainTextRecord) -> str:
     if record.msgid:
         return record.msgid
