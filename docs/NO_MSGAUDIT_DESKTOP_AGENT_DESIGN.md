@@ -704,8 +704,13 @@ confirmed_sent
 
 expected events 由人工或外部记录提供：
 
-```json
-{"type": "expected_event", "expected_id": "manual-001", "chat_name": "汽车贷款小助手", "sender_name": "sky", "content_contains": "需要经营证明吗"}
+```bash
+.venv/bin/python scripts/no_msgaudit_record_expected_event_poc.py \
+  --expected-events-jsonl data/no_msgaudit_desktop_agent/trials/manual-001/expected_events.jsonl \
+  --expected-id "manual-001" \
+  --chat-name "汽车贷款小助手" \
+  --sender-name "sky" \
+  --content-contains "需要经营证明吗"
 ```
 
 输出会给出 `expected_event_count`、`captured_expected_count`、`missing_expected_count` 和 `capture_rate`。

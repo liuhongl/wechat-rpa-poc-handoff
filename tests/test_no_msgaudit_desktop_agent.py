@@ -1615,6 +1615,80 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual(report["capture_rate"], 0.5)
         self.assertEqual(report["missing_expected_events"][0]["expected_id"], "manual-002")
 
+    def test_no_msgaudit_record_expected_event_poc_appends_single_expected_event(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_record_expected_event_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            expected_path = Path(tmpdir) / "expected_events.jsonl"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--expected-events-jsonl",
+                    str(expected_path),
+                    "--expected-id",
+                    "manual-001",
+                    "--chat-name",
+                    "汽车贷款小助手",
+                    "--sender-name",
+                    "sky",
+                    "--content-contains",
+                    "需要经营证明吗",
+                    "--sent-at",
+                    "2026-05-18T10:00:00+08:00",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            row = json.loads(result.stdout)
+            rows = [json.loads(line) for line in expected_path.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual(row["type"], "expected_event")
+        self.assertEqual(row["expected_id"], "manual-001")
+        self.assertEqual(row["chat_name"], "汽车贷款小助手")
+        self.assertEqual(row["sender_name"], "sky")
+        self.assertEqual(row["content_contains"], "需要经营证明吗")
+        self.assertEqual(row["sent_at"], "2026-05-18T10:00:00+08:00")
+        self.assertEqual(rows, [row])
+
+    def test_no_msgaudit_record_expected_event_poc_can_create_repeated_expected_events(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_record_expected_event_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            expected_path = Path(tmpdir) / "expected_events.jsonl"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--expected-events-jsonl",
+                    str(expected_path),
+                    "--expected-id-prefix",
+                    "burst-loan",
+                    "--chat-name",
+                    "汽车贷款小助手",
+                    "--sender-name",
+                    "sky",
+                    "--content-contains",
+                    "需要经营证明吗",
+                    "--count",
+                    "3",
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            stdout_rows = [json.loads(line) for line in result.stdout.splitlines()]
+            file_rows = [json.loads(line) for line in expected_path.read_text(encoding="utf-8").splitlines()]
+
+        self.assertEqual([row["expected_id"] for row in stdout_rows], ["burst-loan-001", "burst-loan-002", "burst-loan-003"])
+        self.assertEqual(stdout_rows, file_rows)
+        self.assertTrue(all(row["type"] == "expected_event" for row in file_rows))
+
     def test_no_msgaudit_desktop_trial_runner_poc_creates_evidence_bundle(self) -> None:
         root = Path(__file__).resolve().parent.parent
         script = root / "scripts" / "no_msgaudit_desktop_trial_runner_poc.py"
