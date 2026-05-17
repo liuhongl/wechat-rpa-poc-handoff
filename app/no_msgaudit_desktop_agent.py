@@ -35,6 +35,30 @@ class WeComSendPlan:
 
 
 @dataclass(frozen=True)
+class WeComDesktopSnapshot:
+    current_chat_name: str
+    selected_chat_name: str
+    input_text: str = ""
+    app_online: bool = True
+    window_visible: bool = True
+    captured_at: str = ""
+    raw_snapshot_ref: str = ""
+
+
+@dataclass(frozen=True)
+class WeComSendPreflightReport:
+    ok: bool
+    status: str
+    job_id: str
+    event_id: str
+    expected_chat_name: str
+    verified_chat_name: str | None
+    failures: list[str]
+    warnings: list[str]
+    can_send: bool
+
+
+@dataclass(frozen=True)
 class WeComSendResult:
     job_id: str
     chat_name: str
@@ -138,4 +162,76 @@ def send_plan_to_dict(plan: WeComSendPlan) -> dict[str, Any]:
         "mode": plan.mode,
         "requires_operator_confirm": plan.requires_operator_confirm,
         "send": plan.mode == "auto_send",
+    }
+
+
+def validate_send_preflight(
+    plan: WeComSendPlan,
+    snapshot: WeComDesktopSnapshot,
+    *,
+    processed_event_ids: Iterable[str],
+    require_empty_input: bool = True,
+) -> WeComSendPreflightReport:
+    failures: list[str] = []
+    warnings: list[str] = []
+    expected_chat_name = plan.chat_name.strip()
+    current_chat_name = snapshot.current_chat_name.strip()
+    selected_chat_name = snapshot.selected_chat_name.strip()
+    processed = set(processed_event_ids)
+
+    if not snapshot.app_online:
+        failures.append("app_offline")
+    if not snapshot.window_visible:
+        failures.append("window_not_visible")
+    if not expected_chat_name:
+        failures.append("missing_chat_name")
+    if current_chat_name != expected_chat_name:
+        failures.append("current_chat_mismatch")
+    if selected_chat_name != expected_chat_name:
+        failures.append("selected_chat_mismatch")
+    if require_empty_input and snapshot.input_text.strip():
+        failures.append("input_not_empty")
+    if plan.event_id in processed:
+        failures.append("already_processed")
+    if plan.mode not in {"draft", "confirm_send", "auto_send"}:
+        failures.append("invalid_send_mode")
+
+    ok = not failures
+    can_send = ok and plan.mode == "auto_send"
+    if not failures and plan.mode == "auto_send":
+        status = "ready_to_send"
+    elif not failures and plan.mode == "confirm_send":
+        status = "needs_operator_confirm"
+    elif not failures:
+        status = "ready_to_draft"
+    else:
+        status = "blocked"
+
+    if ok and plan.requires_operator_confirm and plan.mode == "auto_send":
+        warnings.append("operator_confirm_flag_ignored_for_auto_send")
+
+    return WeComSendPreflightReport(
+        ok=ok,
+        status=status,
+        job_id=plan.job_id,
+        event_id=plan.event_id,
+        expected_chat_name=expected_chat_name,
+        verified_chat_name=current_chat_name or None,
+        failures=failures,
+        warnings=warnings,
+        can_send=can_send,
+    )
+
+
+def preflight_report_to_dict(report: WeComSendPreflightReport) -> dict[str, Any]:
+    return {
+        "ok": report.ok,
+        "status": report.status,
+        "job_id": report.job_id,
+        "event_id": report.event_id,
+        "expected_chat_name": report.expected_chat_name,
+        "verified_chat_name": report.verified_chat_name,
+        "failures": report.failures,
+        "warnings": report.warnings,
+        "can_send": report.can_send,
     }

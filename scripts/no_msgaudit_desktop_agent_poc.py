@@ -24,9 +24,12 @@ from app.member_assistant_poc import (
     save_processed_keys,
 )
 from app.no_msgaudit_desktop_agent import (
+    WeComDesktopSnapshot,
     build_wecom_events_from_ui_snapshot,
+    preflight_report_to_dict,
     reply_job_to_send_plan,
     send_plan_to_dict,
+    validate_send_preflight,
     wecom_event_to_dict,
     wecom_event_to_plain_text_record,
 )
@@ -53,6 +56,21 @@ def _load_group_targets(path: Path) -> list[GroupReplyTarget]:
             )
         )
     return targets
+
+
+def _load_desktop_snapshot(path: Path) -> WeComDesktopSnapshot:
+    payload = _load_json(path)
+    if not isinstance(payload, dict):
+        raise ValueError("desktop snapshot JSON must be an object")
+    return WeComDesktopSnapshot(
+        current_chat_name=str(payload.get("current_chat_name") or ""),
+        selected_chat_name=str(payload.get("selected_chat_name") or ""),
+        input_text=str(payload.get("input_text") or ""),
+        app_online=bool(payload.get("app_online", True)),
+        window_visible=bool(payload.get("window_visible", True)),
+        captured_at=str(payload.get("captured_at") or ""),
+        raw_snapshot_ref=str(payload.get("raw_snapshot_ref") or path),
+    )
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -88,6 +106,12 @@ def main() -> None:
     parser.add_argument("--human-userid", default=os.getenv("HUMAN_USERID", ""))
     parser.add_argument("--detected-at", default="")
     parser.add_argument("--raw-snapshot-ref", default="")
+    parser.add_argument(
+        "--desktop-snapshot-json",
+        type=Path,
+        default=None,
+        help="Optional dry-run desktop snapshot used to emit send_preflight rows. Does not control WeCom.",
+    )
     parser.add_argument("--ignore-state", action="store_true")
     parser.add_argument("--mark-planned", action="store_true")
     parser.add_argument(
@@ -137,6 +161,7 @@ def main() -> None:
         assistant_sender_ids=args.assistant_sender_id,
     )
     send_plans = [reply_job_to_send_plan(job) for job in jobs]
+    desktop_snapshot = _load_desktop_snapshot(args.desktop_snapshot_json) if args.desktop_snapshot_json else None
 
     rows: list[dict[str, Any]] = []
     for event in events:
@@ -145,6 +170,14 @@ def main() -> None:
         rows.append({"type": "reply_job", **reply_job_to_dict(job)})
     for plan in send_plans:
         rows.append({"type": "send_plan", **send_plan_to_dict(plan)})
+    if desktop_snapshot:
+        for plan in send_plans:
+            report = validate_send_preflight(
+                plan,
+                desktop_snapshot,
+                processed_event_ids=processed,
+            )
+            rows.append({"type": "send_preflight", **preflight_report_to_dict(report)})
 
     for row in rows:
         print(json.dumps(row, ensure_ascii=False), flush=True)

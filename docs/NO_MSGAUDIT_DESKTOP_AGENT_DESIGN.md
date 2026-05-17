@@ -448,11 +448,52 @@ send_plan
 ### P1：真实桌面 I/O 验证
 
 ```text
+[x] 定义发送前校验模型
 [ ] 连续扫描会话列表，发现多个群的 [有人@我]
 [ ] 打开目标群后读取最近上下文
-[ ] 校验顶部群名和左侧选中会话
+[ ] 从真实企业微信采集顶部群名、左侧选中会话、输入框内容
+[x] 用桌面快照校验顶部群名和左侧选中会话
 [ ] 只写草稿，不发送
 ```
+
+当前 P1 校验模型仍是 dry-run。可以用手工构造的桌面快照 JSON 验证防错群判断：
+
+```json
+{
+  "current_chat_name": "汽车贷款小助手",
+  "selected_chat_name": "汽车贷款小助手",
+  "input_text": "",
+  "app_online": true,
+  "window_visible": true,
+  "captured_at": "2026-05-17T10:00:00+08:00"
+}
+```
+
+运行：
+
+```bash
+.venv/bin/python scripts/no_msgaudit_desktop_agent_poc.py \
+  --assistant-name "刘红利" \
+  --ignore-state \
+  --desktop-snapshot-json /tmp/wecom_desktop_snapshot.json
+```
+
+输出会额外包含：
+
+```text
+send_preflight
+```
+
+其中：
+
+```text
+ok=true 表示当前桌面快照满足写草稿/发送前校验
+status=ready_to_draft 表示只能安全写草稿
+status=ready_to_send 表示 auto_send 模式下校验通过
+status=blocked 表示必须停止，不能写入或发送
+```
+
+注意：这一步还没有从真实企业微信自动采集桌面快照，只是把“是否允许写草稿/发送”的判断模型先固定下来。
 
 ### P2：半自动闭环
 

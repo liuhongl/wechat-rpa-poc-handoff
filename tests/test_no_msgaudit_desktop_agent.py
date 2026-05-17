@@ -1,15 +1,19 @@
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 from app.member_assistant_poc import GroupReplyTarget, MultiGroupReplyJob
 from app.no_msgaudit_desktop_agent import (
+    WeComDesktopSnapshot,
     WeComEvent,
     build_wecom_events_from_ui_snapshot,
+    preflight_report_to_dict,
     reply_job_to_send_plan,
     send_plan_to_dict,
+    validate_send_preflight,
     wecom_event_to_plain_text_record,
 )
 
@@ -114,6 +118,148 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertIn("send_plan", row_types)
         self.assertIn('"mode": "draft"', result.stdout)
         self.assertIn('"send": false', result.stdout)
+
+    def test_no_msgaudit_desktop_agent_poc_outputs_preflight_when_snapshot_is_provided(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_agent_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "desktop_snapshot.json"
+            snapshot_path.write_text(
+                json.dumps(
+                    {
+                        "current_chat_name": "汽车贷款小助手",
+                        "selected_chat_name": "汽车贷款小助手",
+                        "input_text": "",
+                        "app_online": True,
+                        "window_visible": True,
+                        "captured_at": "2026-05-17T10:00:00+08:00",
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--desktop-snapshot-json",
+                    str(snapshot_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+        rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip().startswith("{")]
+        preflight_rows = [row for row in rows if row["type"] == "send_preflight"]
+
+        self.assertEqual(len(preflight_rows), 2)
+        self.assertTrue(preflight_rows[0]["ok"])
+        self.assertEqual(preflight_rows[0]["status"], "ready_to_draft")
+        self.assertFalse(preflight_rows[0]["can_send"])
+        self.assertFalse(preflight_rows[1]["ok"])
+        self.assertEqual(preflight_rows[1]["status"], "blocked")
+        self.assertIn("current_chat_mismatch", preflight_rows[1]["failures"])
+
+    def test_send_preflight_allows_safe_draft_when_desktop_snapshot_matches(self) -> None:
+        plan = self._send_plan(mode="draft")
+        snapshot = WeComDesktopSnapshot(
+            current_chat_name="汽车贷款小助手",
+            selected_chat_name="汽车贷款小助手",
+            input_text="",
+            app_online=True,
+            window_visible=True,
+            captured_at="2026-05-17T10:00:00+08:00",
+        )
+
+        report = validate_send_preflight(plan, snapshot, processed_event_ids=set())
+        payload = preflight_report_to_dict(report)
+
+        self.assertTrue(report.ok)
+        self.assertEqual(report.status, "ready_to_draft")
+        self.assertFalse(report.can_send)
+        self.assertEqual(report.failures, [])
+        self.assertEqual(payload["verified_chat_name"], "汽车贷款小助手")
+
+    def test_send_preflight_blocks_wrong_chat_and_nonempty_input(self) -> None:
+        plan = self._send_plan(mode="draft")
+        snapshot = WeComDesktopSnapshot(
+            current_chat_name="客户联系",
+            selected_chat_name="汽车金融VIP群",
+            input_text="未发送的旧草稿",
+            app_online=True,
+            window_visible=True,
+            captured_at="2026-05-17T10:00:00+08:00",
+        )
+
+        report = validate_send_preflight(plan, snapshot, processed_event_ids=set())
+
+        self.assertFalse(report.ok)
+        self.assertFalse(report.can_send)
+        self.assertIn("current_chat_mismatch", report.failures)
+        self.assertIn("selected_chat_mismatch", report.failures)
+        self.assertIn("input_not_empty", report.failures)
+
+    def test_send_preflight_blocks_processed_event_and_offline_desktop(self) -> None:
+        plan = self._send_plan(mode="auto_send")
+        snapshot = WeComDesktopSnapshot(
+            current_chat_name="汽车贷款小助手",
+            selected_chat_name="汽车贷款小助手",
+            input_text="",
+            app_online=False,
+            window_visible=False,
+            captured_at="2026-05-17T10:00:00+08:00",
+        )
+
+        report = validate_send_preflight(
+            plan,
+            snapshot,
+            processed_event_ids={plan.event_id},
+        )
+
+        self.assertFalse(report.ok)
+        self.assertFalse(report.can_send)
+        self.assertIn("app_offline", report.failures)
+        self.assertIn("window_not_visible", report.failures)
+        self.assertIn("already_processed", report.failures)
+
+    def test_send_preflight_allows_auto_send_only_when_all_checks_pass(self) -> None:
+        plan = self._send_plan(mode="auto_send")
+        snapshot = WeComDesktopSnapshot(
+            current_chat_name="汽车贷款小助手",
+            selected_chat_name="汽车贷款小助手",
+            input_text="",
+            app_online=True,
+            window_visible=True,
+            captured_at="2026-05-17T10:00:00+08:00",
+        )
+
+        report = validate_send_preflight(plan, snapshot, processed_event_ids=set())
+
+        self.assertTrue(report.ok)
+        self.assertEqual(report.status, "ready_to_send")
+        self.assertTrue(report.can_send)
+
+    def _send_plan(self, *, mode: str):
+        job = MultiGroupReplyJob(
+            roomid="wr_auto_loan_group",
+            chat_name="汽车贷款小助手",
+            source_msgid="ui:汽车贷款小助手:sky:需要经营证明吗 @刘红利",
+            sender="sky",
+            content="需要经营证明吗 @刘红利",
+            reply_content="回复内容",
+            matched_question="需要经营证明吗",
+            score=1.0,
+            handoff=False,
+            question_content="需要经营证明吗",
+            applescript="",
+        )
+        return reply_job_to_send_plan(job, mode=mode)
 
 
 if __name__ == "__main__":
