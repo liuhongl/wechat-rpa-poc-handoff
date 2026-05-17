@@ -644,6 +644,73 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual(len(plan_rows), 1)
         self.assertEqual(preflight_rows[0]["status"], "ready_to_draft")
 
+    def test_no_msgaudit_desktop_scan_poc_dedupes_repeated_accessibility_tree_events_in_one_run(self) -> None:
+        root = Path(__file__).resolve().parent.parent
+        script = root / "scripts" / "no_msgaudit_desktop_scan_poc.py"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            snapshot_dir = tmp_path / "snapshots"
+            snapshot_dir.mkdir()
+            out_path = tmp_path / "scan.jsonl"
+            (snapshot_dir / "001-loan.txt").write_text(
+                "\n".join(
+                    [
+                        "AXApplication 企业微信",
+                        "  AXWindow 企业微信",
+                        "    AXRow (selected)",
+                        "      AXCell (selected)",
+                        "        AXStaticText 汽车贷款小助手",
+                        "    AXTextField 汽车贷款小助手",
+                        "    AXScrollArea",
+                        "      AXTable",
+                        "        AXRow",
+                        "          AXCell",
+                        "            AXStaticText 16:48",
+                        "            AXStaticText sky",
+                        "            AXTextArea 需要经营证明吗 @刘红利",
+                        "    AXTextArea",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    "--assistant-name",
+                    "刘红利",
+                    "--ignore-state",
+                    "--desktop-accessibility-tree-dir",
+                    str(snapshot_dir),
+                    "--events-from-accessibility-tree",
+                    "--iterations",
+                    "2",
+                    "--interval-seconds",
+                    "0",
+                    "--out",
+                    str(out_path),
+                ],
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            rows = [json.loads(line) for line in out_path.read_text(encoding="utf-8").splitlines()]
+
+        event_rows = [row for row in rows if row["type"] == "wecom_event"]
+        job_rows = [row for row in rows if row["type"] == "reply_job"]
+        plan_rows = [row for row in rows if row["type"] == "send_plan"]
+        heartbeat_rows = [row for row in rows if row["type"] == "scan_heartbeat"]
+        preflight_rows = [row for row in rows if row["type"] == "send_preflight"]
+
+        self.assertEqual(len(event_rows), 1)
+        self.assertEqual(len(job_rows), 1)
+        self.assertEqual(len(plan_rows), 1)
+        self.assertEqual(len(preflight_rows), 1)
+        self.assertEqual([row["send_plan_count"] for row in heartbeat_rows], [1, 0])
+
     def test_no_msgaudit_write_snapshot_poc_writes_stdin_to_timestamped_file(self) -> None:
         root = Path(__file__).resolve().parent.parent
         script = root / "scripts" / "no_msgaudit_write_snapshot_poc.py"

@@ -220,6 +220,15 @@ def _build_jobs_and_send_plans(
     return jobs, send_plans
 
 
+def _filter_unseen_events(events: list[Any], seen_event_ids: set[str]) -> list[Any]:
+    unseen_events: list[Any] = []
+    for event in events:
+        if event.event_id in seen_event_ids:
+            continue
+        unseen_events.append(event)
+    return unseen_events
+
+
 def _append_event_job_plan_rows(
     rows: list[dict[str, Any]],
     *,
@@ -302,6 +311,7 @@ def main() -> None:
     base_detected_at = _now_iso()
     roomid_by_chat_name = {target.chat_name: target.roomid for target in targets}
     processed = set() if args.ignore_state else load_processed_keys(args.state_file)
+    seen_event_ids_this_run: set[str] = set()
 
     rows: list[dict[str, Any]] = []
     send_plans: list[Any] = []
@@ -342,6 +352,7 @@ def main() -> None:
                 detected_at=captured_at,
                 raw_snapshot_ref=str(event_source_path),
             )
+            events = _filter_unseen_events(events, seen_event_ids_this_run)
             jobs, send_plans = _build_jobs_and_send_plans(
                 events,
                 targets=targets,
@@ -359,6 +370,7 @@ def main() -> None:
                 send_plans=send_plans,
                 iteration=iteration + 1,
             )
+            seen_event_ids_this_run.update(job.source_msgid for job in jobs)
 
         snapshot = _load_snapshot_for_iteration(
             args,
