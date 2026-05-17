@@ -128,7 +128,7 @@ def build_wecom_events_from_accessibility_tree_text(
         return []
 
     events: list[WeComEvent] = []
-    seen_event_ids: set[str] = set()
+    event_key_counts: dict[str, int] = {}
     for block in _iter_accessibility_row_blocks(tree_text):
         content_items = _message_contents_from_accessibility_block(block)
         if not content_items:
@@ -144,10 +144,10 @@ def build_wecom_events_from_accessibility_tree_text(
         for content in content_items:
             if not _content_mentions_assistant(content, assistant_name):
                 continue
-            event_id = f"ax:{current_chat_name}:{sender_name}:{content}"
-            if event_id in seen_event_ids:
-                continue
-            seen_event_ids.add(event_id)
+            event_key = f"ax:{current_chat_name}:{sender_name}:{content}"
+            occurrence = event_key_counts.get(event_key, 0) + 1
+            event_key_counts[event_key] = occurrence
+            event_id = f"{event_key}#{occurrence}"
             events.append(
                 WeComEvent(
                     event_id=event_id,

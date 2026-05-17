@@ -305,7 +305,7 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         )
 
         self.assertEqual(len(events), 1)
-        self.assertEqual(events[0].event_id, "ax:汽车金融VIP群:sky:需要经营证明吗 @刘红利")
+        self.assertEqual(events[0].event_id, "ax:汽车金融VIP群:sky:需要经营证明吗 @刘红利#1")
         self.assertEqual(events[0].source, "desktop_accessibility_tree")
         self.assertEqual(events[0].chat_name, "汽车金融VIP群")
         self.assertEqual(events[0].sender_name, "sky")
@@ -314,6 +314,44 @@ class NoMsgAuditDesktopAgentTests(unittest.TestCase):
         self.assertEqual(events[0].detected_at, "2026-05-17T10:00:00+08:00")
         self.assertEqual(events[0].confidence, 0.85)
         self.assertEqual(events[0].raw_snapshot_ref, "swift-ax:企业微信")
+
+    def test_builds_distinct_ax_events_for_repeated_identical_visible_mentions(self) -> None:
+        targets = [
+            GroupReplyTarget(roomid="wr_vip_group", chat_name="汽车金融VIP群"),
+        ]
+
+        events = build_wecom_events_from_accessibility_tree_text(
+            """
+            AXApplication 企业微信
+              AXWindow 企业微信
+                AXTextField 汽车金融VIP群
+                AXScrollArea
+                  AXTable
+                    AXRow
+                      AXCell
+                        AXStaticText 16:48
+                        AXStaticText sky
+                        AXTextArea 需要经营证明吗 @刘红利
+                    AXRow
+                      AXCell
+                        AXStaticText 16:49
+                        AXStaticText sky
+                        AXTextArea 需要经营证明吗 @刘红利
+            """,
+            group_targets=targets,
+            assistant_name="刘红利",
+            detected_at="2026-05-17T10:00:00+08:00",
+            raw_snapshot_ref="swift-ax:企业微信",
+        )
+
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[0].sender_name, "sky")
+        self.assertEqual(events[1].sender_name, "sky")
+        self.assertEqual(events[0].content, "需要经营证明吗 @刘红利")
+        self.assertEqual(events[1].content, "需要经营证明吗 @刘红利")
+        self.assertNotEqual(events[0].event_id, events[1].event_id)
+        self.assertTrue(events[0].event_id.endswith("#1"))
+        self.assertTrue(events[1].event_id.endswith("#2"))
 
     def test_no_msgaudit_desktop_agent_poc_can_build_preflight_from_snapshot_text_file(self) -> None:
         root = Path(__file__).resolve().parent.parent
