@@ -8,7 +8,7 @@
 
 ## 当前结论
 
-最适合本场景的最终路线是：
+如果允许使用会话内容存档，最适合本场景的最终路线是：
 
 ```text
 会话内容存档 SDK 负责读消息
@@ -16,7 +16,18 @@
 企业微信客户端自动化负责以刘红利账号发回对应群
 ```
 
-在暂不接会话内容存档时，替代验证路线是：
+如果明确不依赖会话内容存档，则当前路线调整为：
+
+```text
+专用企业微信客户端托管
+WeCom Desktop Adapter 负责读取 UI、识别 @、定位群、写入/发送
+自建 Reply Orchestrator 负责判断、去重、AI/FAQ 和路由
+State & Observability 负责状态、截图、心跳、告警
+```
+
+这不是官方 API 级生产方案，而是工程化 RPA 生产尝试方案。它的核心风险是企业微信桌面 UI 稳定性和防错群。
+
+在正式进入生产尝试前，当前替代验证路线是：
 
 ```text
 GUI/Computer Use/OCR 获取企业微信会话列表快照
@@ -50,9 +61,9 @@ GUI/Computer Use/OCR 获取企业微信会话列表快照
 
 ## OpenClaw 的位置
 
-OpenClaw 可以作为 Agent 编排和多群路由思想参考，但它不是企业微信外部客户群的现成消息源。
+OpenClaw 可以作为 Agent 编排和多群路由思想参考，但它不是企业微信外部客户群的现成消息源，也不能替代企业微信桌面读写适配层。
 
-如果后期使用 OpenClaw，更合理的位置是：
+如果使用会话内容存档，更合理的位置是：
 
 ```text
 会话内容存档 SDK
@@ -61,7 +72,17 @@ OpenClaw 可以作为 Agent 编排和多群路由思想参考，但它不是企�
 -> 企业微信客户端自动化发送
 ```
 
-当前阶段不建议先引入 OpenClaw，以免在消息源还未验证前放大复杂度。
+如果不使用会话内容存档，更合理的位置是：
+
+```text
+WeCom Desktop Adapter
+-> WeComEvent
+-> OpenClaw/QClaw 或自建 Reply Orchestrator 做 Agent 编排
+-> SendPlan
+-> WeCom Desktop Adapter 执行发送
+```
+
+当前阶段不建议先引入 OpenClaw/QClaw。应先把企业微信桌面 I/O 适配层验证稳定，再评估是否把 Agent 编排层换成 OpenClaw/QClaw。
 
 ## 当前 POC 链路
 
@@ -149,6 +170,9 @@ poc/member-assistant-rpa
 
 3. 尝试替换发送自动化引擎：
    poc/desktop-automation-engine
+
+4. 不依赖会话内容存档的桌面 Agent 生产尝试：
+   poc/no-msgaudit-desktop-agent
 ```
 
 ## 下一步建议
@@ -168,4 +192,10 @@ poc/member-assistant-rpa
 
 ```text
 docs/NO_MSGAUDIT_GUI_RPA_RUNBOOK.md
+```
+
+不依赖会话内容存档的桌面 Agent 生产尝试设计见：
+
+```text
+docs/NO_MSGAUDIT_DESKTOP_AGENT_DESIGN.md
 ```
